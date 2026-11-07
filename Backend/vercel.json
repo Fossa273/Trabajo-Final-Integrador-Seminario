@@ -14,5 +14,11 @@
   ],
   "routes": [
     { "src": "/(.*)", "dest": "/api/index.js" }
+  ],
+  "crons": [
+    {
+      "path": "/api/payment/reminders/run",
+      "schedule": "0 12 * * *"
+    }
   ]
 }

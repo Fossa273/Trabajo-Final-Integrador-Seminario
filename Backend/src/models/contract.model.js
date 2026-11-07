@@ -1,4 +1,5 @@
 import prisma from "../lib/prisma.js";
+import settingModel from "./setting.model.js";
 import DEFAULT_CONTRACT_CONTENT from "../data/contractContent.js";
 
 const CONTRACT_INCLUDE = {
@@ -53,6 +54,20 @@ const CONTRACT_INCLUDE = {
     },
     payments: { where: { activo: true } }
 };
+
+function round(value) {
+    return Math.round(Number(value) * 100) / 100;
+}
+
+async function getDepositPercentage() {
+    const setting = await settingModel.getByKey(
+        "payment_deposit_percentage"
+    );
+    const parsed = Number(setting?.value);
+    return Number.isFinite(parsed) && parsed >= 0 && parsed <= 100
+        ? parsed
+        : 30;
+}
 
 export function timeToDate(value) {
     if (!value) return null;
@@ -127,11 +142,15 @@ class ContractModel {
     }
 
     async createFromReservation(idReservation, finalValue, extraIds) {
+        const total = round(finalValue);
+        const depositPercentage = await getDepositPercentage();
+        const depositAmount = round((total * depositPercentage) / 100);
+
         return await prisma.$transaction(async (tx) => {
             const contract = await tx.contract.create({
                 data: {
                     dateContract: new Date(),
-                    finalValue: Number(finalValue),
+                    finalValue: total,
                     status: "generado",
                     idReservation: Number(idReservation),
                     clausulas: DEFAULT_CONTRACT_CONTENT,
@@ -147,14 +166,61 @@ class ContractModel {
                 }
             });
 
-            await tx.payment.create({
-                data: {
-                    value: Number(finalValue),
-                    statusPayment: "pendiente",
-                    datePayment: new Date(),
-                    idContract: contract.idContract
-                }
+            if (total <= 0) {
+                return contract;
+            }
+
+            const reservation = await tx.reservation.findUnique({
+                where: { idReservation: Number(idReservation) },
+                select: { dateEvent: true }
             });
+            const eventDate = reservation?.dateEvent || null;
+            const now = new Date();
+
+            if (depositAmount <= 0) {
+                await tx.payment.create({
+                    data: {
+                        value: total,
+                        statusPayment: "pendiente",
+                        datePayment: now,
+                        concept: "Saldo",
+                        dueDate: eventDate,
+                        idContract: contract.idContract
+                    }
+                });
+            } else if (depositAmount >= total) {
+                await tx.payment.create({
+                    data: {
+                        value: total,
+                        statusPayment: "pendiente",
+                        datePayment: now,
+                        concept: "Seña",
+                        dueDate: now,
+                        idContract: contract.idContract
+                    }
+                });
+            } else {
+                await tx.payment.createMany({
+                    data: [
+                        {
+                            value: depositAmount,
+                            statusPayment: "pendiente",
+                            datePayment: now,
+                            concept: "Seña",
+                            dueDate: now,
+                            idContract: contract.idContract
+                        },
+                        {
+                            value: round(total - depositAmount),
+                            statusPayment: "pendiente",
+                            datePayment: now,
+                            concept: "Saldo",
+                            dueDate: eventDate,
+                            idContract: contract.idContract
+                        }
+                    ]
+                });
+            }
 
             return contract;
         });
@@ -164,7 +230,7 @@ class ContractModel {
         const { eventStartTime, eventEndTime, cantExactaInvit, finalValue } = data;
 
         try {
-            const updated = await prisma.contract.update({
+            return await prisma.contract.update({
                 where: { idContract: Number(id) },
                 data: {
                     eventStartTime: timeToDate(eventStartTime),
@@ -178,15 +244,6 @@ class ContractModel {
                     finalValue: Number(finalValue)
                 }
             });
-
-            if (finalValue !== undefined) {
-                await prisma.payment.updateMany({
-                    where: { idContract: Number(id) },
-                    data: { value: Number(finalValue) }
-                });
-            }
-
-            return updated;
         } catch {
             return null;
         }

@@ -2,6 +2,7 @@ import contractModel, { timeToDate } from "../models/contract.model.js";
 import reservationModel from "../models/reservation.model.js";
 import priceModel from "../models/price.model.js";
 import notificationService from "./notification.service.js";
+import paymentService from "./payment.service.js";
 import prisma from "../lib/prisma.js";
 
 const EDITABLE_STATUSES = ["generado", "rechazado", "modificacion_en_curso"];
@@ -189,12 +190,16 @@ class ContractService {
             freshReservation
         );
 
-        await contractModel.updateData(id, {
+        const updatedData = await contractModel.updateData(id, {
             eventStartTime: data.eventStartTime,
             eventEndTime: data.eventEndTime,
             cantExactaInvit: cantExactaReal,
             finalValue: calc.total
         });
+
+        if (updatedData) {
+            await paymentService.syncContractPayments(id, calc.total);
+        }
 
         const updatedContract = await contractModel.getById(id);
 
@@ -569,12 +574,16 @@ class ContractService {
             freshReservation
         );
 
-        await contractModel.updateData(id, {
+        const updatedData = await contractModel.updateData(id, {
             eventStartTime,
             eventEndTime,
             cantExactaInvit: cantExactaReal,
             finalValue: calc.total
         });
+
+        if (updatedData) {
+            await paymentService.syncContractPayments(id, calc.total);
+        }
 
         const aprobado = await contractModel.updateModification(id, {
             modificationStatus: "aprobada",

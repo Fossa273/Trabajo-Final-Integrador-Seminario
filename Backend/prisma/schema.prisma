@@ -169,14 +169,43 @@ model ContractExtraService {
 }
 
 model Payment {
-  idPayment     Int      @id @default(autoincrement())
-  value         Decimal  @db.Decimal(10, 2)
-  statusPayment String   @db.VarChar(50)
-  datePayment   DateTime @db.Date
-  idContract    Int
-  activo        Boolean  @default(true)
+  idPayment           Int       @id @default(autoincrement())
+  value               Decimal   @db.Decimal(10, 2)
+  statusPayment       String    @db.VarChar(50)
+  datePayment         DateTime  @db.Date
+  concept             String?   @db.VarChar(100)
+  dueDate             DateTime? @db.Date
+  notes               String?   @db.VarChar(255)
+  lastReminderAt      DateTime?
+  reportedAt          DateTime?
+  reportedPaymentDate DateTime? @db.Date
+  reportedMethod      String?   @db.VarChar(50)
+  reportedReference   String?   @db.VarChar(100)
+  reportedNotes       String?   @db.VarChar(500)
+  reportedProofUrl    String?   @db.VarChar(255)
+  reportStatus        String?   @db.VarChar(50)
+  reportReviewedAt    DateTime?
+  reportReviewNotes   String?   @db.VarChar(500)
+  idContract          Int
+  activo              Boolean   @default(true)
 
   contract Contract @relation(fields: [idContract], references: [idContract])
+
+  @@index([idContract, activo])
+  @@index([statusPayment, dueDate])
+  @@index([reportStatus])
+}
+
+model Setting {
+  key   String @id @db.VarChar(100)
+  value String @db.VarChar(255)
+}
+
+model EmailTemplate {
+  key       String   @id @db.VarChar(100)
+  subject   String   @db.VarChar(255)
+  body      String   @db.Text
+  updatedAt DateTime @updatedAt
 }
 
 model Usuario {

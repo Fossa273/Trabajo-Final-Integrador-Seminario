@@ -869,3 +869,304 @@
         padding: 34px;
     }
 }
+
+/* PAGOS */
+
+.contract-status.pendiente {
+    background: rgba(245, 158, 11, 0.14);
+    border-color: rgba(245, 158, 11, 0.4);
+    color: #fbbf24;
+}
+
+.contract-status.seña {
+    background: rgba(168, 85, 247, 0.14);
+    border-color: rgba(168, 85, 247, 0.4);
+    color: #d8b4fe;
+}
+
+.contract-status.pagado {
+    background: rgba(34, 197, 94, 0.12);
+    border-color: rgba(34, 197, 94, 0.4);
+    color: #86efac;
+}
+
+.contract-payment-summary {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.contract-payment-summary > div {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 14px 16px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+}
+
+.contract-payment-summary span {
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.5);
+}
+
+.contract-payment-summary strong {
+    font-size: 1.15rem;
+    color: #ffffff;
+}
+
+.contract-payment-summary strong.paid {
+    color: #86efac;
+}
+
+.contract-payment-summary strong.pending {
+    color: #fbbf24;
+}
+
+.contract-payment-table-wrap {
+    width: 100%;
+    overflow-x: auto;
+}
+
+.contract-payment-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+
+.contract-payment-table th {
+    padding: 12px 10px;
+    text-align: left;
+    font-size: 0.66rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.55);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+    white-space: nowrap;
+}
+
+.contract-payment-table td {
+    padding: 14px 10px;
+    color: rgba(255, 255, 255, 0.82);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+    white-space: nowrap;
+}
+
+.contract-payment-actions {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.contract-payment-btn {
+    padding: 7px 14px;
+    border-radius: 999px;
+    font-family: "Montserrat", system-ui, sans-serif;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    transition:
+        background 0.2s ease,
+        color 0.2s ease,
+        border-color 0.2s ease,
+        transform 0.2s ease;
+}
+
+.contract-payment-btn.paid {
+    background: rgba(34, 197, 94, 0.12);
+    border: 1px solid rgba(34, 197, 94, 0.45);
+    color: #86efac;
+}
+
+.contract-payment-btn.paid:hover:not(:disabled) {
+    background: #22c55e;
+    color: #052e16;
+}
+
+.contract-payment-btn.reminder {
+    background: rgba(250, 204, 21, 0.1);
+    border: 1px solid rgba(250, 204, 21, 0.45);
+    color: #fde047;
+}
+
+.contract-payment-btn.reminder:hover:not(:disabled) {
+    background: #facc15;
+    color: #0b0f19;
+}
+
+.contract-payment-btn.reopen {
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.contract-payment-btn.reopen:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.08);
+    color: #ffffff;
+}
+
+.contract-payment-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.contract-payment-footer {
+    margin-top: 20px;
+    padding-top: 18px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+@media (min-width: 768px) {
+    .contract-payment-summary {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+.contract-payment-status-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+}
+
+.contract-report-status {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    background: rgba(148, 163, 184, 0.12);
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    color: #e2e8f0;
+}
+
+.contract-report-status.pendiente {
+    background: rgba(34, 211, 238, 0.12);
+    border-color: rgba(34, 211, 238, 0.45);
+    color: #67e8f9;
+}
+
+.contract-report-status.confirmado {
+    background: rgba(34, 197, 94, 0.12);
+    border-color: rgba(34, 197, 94, 0.4);
+    color: #86efac;
+}
+
+.contract-report-status.rechazado {
+    background: rgba(239, 68, 68, 0.12);
+    border-color: rgba(239, 68, 68, 0.4);
+    color: #fca5a5;
+}
+
+.contract-payment-btn.report {
+    background: rgba(34, 211, 238, 0.1);
+    border: 1px solid rgba(34, 211, 238, 0.45);
+    color: #67e8f9;
+}
+
+.contract-payment-btn.report:hover:not(:disabled) {
+    background: #22d3ee;
+    color: #0b0f19;
+}
+
+.contract-payment-hint {
+    color: rgba(255, 255, 255, 0.55);
+    font-size: 0.72rem;
+    font-weight: 600;
+}
+
+.contract-payment-reject-note {
+    margin: 8px 0 0;
+    max-width: 230px;
+    color: #fca5a5;
+    font-size: 0.72rem;
+    line-height: 1.4;
+    white-space: normal;
+}
+
+.contract-payment-report-modal {
+    max-width: 680px;
+    max-height: 90vh;
+    overflow-y: auto;
+}
+
+.contract-payment-report-form {
+    margin-top: 8px;
+}
+
+.contract-payment-report-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 14px;
+    margin-bottom: 20px;
+}
+
+.contract-payment-report-form .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.contract-payment-report-form .form-group.full-width {
+    grid-column: 1 / -1;
+}
+
+.contract-payment-report-form label {
+    color: rgba(255, 255, 255, 0.65);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.contract-payment-report-form input,
+.contract-payment-report-form select,
+.contract-payment-report-form textarea {
+    width: 100%;
+    padding: 11px 13px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 9px;
+    color: #ffffff;
+    font-family: "Montserrat", system-ui, sans-serif;
+    font-size: 0.85rem;
+    outline: none;
+}
+
+.contract-payment-report-form select option {
+    background: #141a2e;
+    color: #ffffff;
+}
+
+.contract-payment-report-form input:focus,
+.contract-payment-report-form select:focus,
+.contract-payment-report-form textarea:focus {
+    border-color: rgba(34, 211, 238, 0.7);
+    box-shadow: 0 0 16px rgba(0, 229, 255, 0.12);
+}
+
+.contract-payment-report-form small {
+    color: rgba(255, 255, 255, 0.45);
+    font-size: 0.7rem;
+}
+
+.contract-payment-report-form input[type="file"] {
+    padding: 9px;
+    cursor: pointer;
+}
+
+@media (min-width: 768px) {
+    .contract-payment-report-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+}
