@@ -38,8 +38,32 @@ const fileFilter = (req, file, cb) => {
     }
 };
 
+const proofFileFilter = (req, file, cb) => {
+    const allowed = [
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+        "image/gif",
+        "application/pdf"
+    ];
+    if (allowed.includes(file.mimetype)) {
+        cb(null, true);
+    } else {
+        cb(
+            new Error("Solo se permiten comprobantes en JPG, PNG, WEBP, GIF o PDF."),
+            false
+        );
+    }
+};
+
 export const uploadSingleImage = multer({
     storage,
     fileFilter,
     limits: { fileSize: 5 * 1024 * 1024 }
 }).single("image");
+
+export const uploadPaymentProof = multer({
+    storage,
+    fileFilter: proofFileFilter,
+    limits: { fileSize: 5 * 1024 * 1024 }
+}).single("proof");

@@ -121,6 +121,16 @@ DATABASE_URL="mysql://root:TU_CONTRASEÑA@localhost:3306/event_hall"
 
 JWT_SECRET=UNA_CLAVE_SECRETA_LARGA_Y_ALEATORIA
 JWT_EXPIRES_IN=8h
+
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=tu_usuario_smtp
+SMTP_PASS=tu_password_smtp
+MAIL_FROM="Stylo <no-reply@example.com>"
+
+FRONTEND_URL=http://localhost:5173
+CRON_SECRET=UNA_CLAVE_SECRETA_PARA_EL_CRON
 ```
 
 > - `DATABASE_URL` es **la única credencial que el sistema usa realmente** (en formato `mysql://USUARIO:CONTRASEÑA@HOST:PUERTO/BASE`). Prisma la usa para el ORM, y el script de setup extrae de ahí el host, puerto, usuario y contraseña para crear la base.
@@ -129,6 +139,9 @@ JWT_EXPIRES_IN=8h
 > - Si el usuario de MySQL **no tiene contraseña**, dejar `DB_PASSWORD=` vacío y usar `DATABASE_URL="mysql://root@localhost:3306/event_hall"`.
 > - No se exige que el usuario sea `root`: sirve cualquier usuario de MySQL con permisos para **crear bases de datos** (necesario para el paso de setup).
 > - `JWT_SECRET` es la clave con la que se firman los tokens de sesión y es **obligatoria**: sin ella el login falla. Usar un valor propio y privado. `JWT_EXPIRES_IN` es opcional (por defecto `8h`).
+> - `SMTP_*` y `MAIL_FROM` son **opcionales**: si no se configuran, el sistema sigue funcionando pero omite el envío de mails (sólo registra un aviso en los logs). Para enviar recordatorios y avisos de pago es necesario completarlos. `SMTP_SECURE=true` se usa normalmente con el puerto `465`; con `587` dejarlo en `false`.
+> - `FRONTEND_URL` se usa para armar los enlaces incluidos en los mails (por defecto `http://localhost:5173`). En producción debe apuntar a la URL pública del frontend.
+> - `CRON_SECRET` protege el endpoint que ejecuta los recordatorios automáticos. Vercel Cron lo envía como `Authorization: Bearer <CRON_SECRET>`; si falta, el endpoint responde `503` y si no coincide, `401`.
 > - El archivo `.env` **no se sube al repositorio** (está en `.gitignore`); si trabajás en el mismo entorno del equipo, pedí los valores reales al grupo.
 
 **2) Instalar dependencias:**
@@ -149,7 +162,7 @@ npm run setup
 Este comando:
 1. Crea la base `event_hall` si no existe.
 2. Aplica el esquema de Prisma (`prisma db push`), creando todas las tablas.
-3. Ejecuta los seeds (ubicaciones, salones, menús, servicios, usuarios y precios).
+3. Ejecuta los seeds (ubicaciones, salones, menús, servicios, usuarios, precios y configuración de pagos).
 
 Los seeds son **idempotentes**: si se ejecutan de nuevo no duplican los datos ya existentes.
 
@@ -206,6 +219,61 @@ Credenciales del administrador creadas por el seed:
 
 Los usuarios **clientes** no vienen con el seed: se registran desde el propio sitio (`POST /api/client` o el formulario de registro). El alta crea además la cuenta de usuario con `rol: "cliente"` y **contraseña inicial temporal igual al DNI** (`passwordTemporal: true`); al cambiarla desde la pantalla de cambio de contraseña se marca como definitiva.
 
+### Recordatorios de pago
+
+Al generar un contrato se crean automáticamente dos cuotas: **Seña** (con vencimiento el día de la reserva) y **Saldo** (con vencimiento el día del evento). El porcentaje de la seña y los días de anticipación para los recordatorios se configuran desde el panel **Gestionar Pagos** (admin → `/payment`) y se guardan en la tabla `Setting`.
+
+Los recordatorios se pueden disparar de dos formas:
+
+- **Manual:** desde el detalle de un contrato o desde el panel de pagos, con el botón de recordatorio.
+- **Automático:** el script `npm run reminders` recorre las cuotas pendientes cuyo evento está dentro de la ventana configurada y envía el mail al cliente (sólo una vez por cuota).
+
+En producción, `Backend/vercel.json` declara un **Vercel Cron** que ejecuta `GET /api/payment/reminders/run` todos los días a las 12:00 UTC. Vercel agrega automáticamente el header `Authorization: Bearer <CRON_SECRET>`; por eso `CRON_SECRET` debe estar definido también en las variables de entorno del proyecto en Vercel. Para probarlo manualmente:
+
+```bash
+curl -H "Authorization: Bearer TU_CRON_SECRET" http://localhost:3000/api/payment/reminders/run
+```
+
+### Reporte de pagos y plantillas de email
+
+El cliente puede **informar un pago** desde el detalle de su contrato (`POST /api/payment/:id/report`). El aviso incluye fecha de pago, medio, referencia, notas y, opcionalmente, un comprobante en imagen o PDF de hasta 5 MB. Mientras el reporte está pendiente, la cuota sigue en estado `pendiente` y no se envían recordatorios.
+
+El administrador revisa los reportes desde **Gestionar Pagos → Reportados** o desde el detalle del contrato:
+
+- **Confirmar:** marca la cuota como `seña` si el concepto es la seña, o `pagado` en caso contrario. Usa la fecha informada por el cliente y envía el email de pago confirmado.
+- **Rechazar:** requiere un motivo, notifica al cliente y le permite volver a informar el pago.
+
+Los emails de pagos usan plantillas editables desde **Gestionar Pagos → Mensajes de email**:
+
+- `payment_pending`: pago pendiente registrado.
+- `payment_reminder`: recordatorio de pago.
+- `payment_confirmed`: pago confirmado.
+
+Cada plantilla tiene asunto y cuerpo. Se pueden usar placeholders como `{{cliente}}`, `{{contrato}}`, `{{concepto}}`, `{{monto}}`, `{{vencimiento}}`, `{{fechaEvento}}`, `{{fechaPago}}`, `{{salon}}`, `{{enlace}}`, `{{titulo}}` y `{{mensaje}}`. El botón **Ver mi contrato** y el diseño HTML son fijos. La opción **Restaurar predeterminadas** vuelve a cargar los textos originales.
+
+Endpoints principales:
+
+```text
+POST /api/payment/:id/report                  (cliente autenticado)
+POST /api/payment/:id/report/confirm          (admin)
+POST /api/payment/:id/report/reject           (admin)
+GET  /api/payment/reported/count              (admin)
+GET  /api/payment/email-templates             (admin)
+PUT  /api/payment/email-templates             (admin)
+POST /api/payment/email-templates/reset       (admin)
+```
+
+Para generar datos aleatorios de prueba:
+
+```bash
+cd Backend
+npm run seed:random -- --clients 10 --reset
+npm run seed:random -- --clients 5 --seed 12345
+npm run seed:random -- --reset-only
+```
+
+Los clientes demo usan emails terminados en `@demo.stylo.test` y contraseña `demo123`. `--reset` elimina sólo datos demo antes de crear los nuevos; `--reset-only` sólo limpia. Los reportes de pago se excluyen de los recordatorios automáticos.
+
 ---
 
 ## 6. Scripts disponibles
@@ -221,6 +289,11 @@ Los usuarios **clientes** no vienen con el seed: se registran desde el propio si
 | `npm run seed:locations` | Carga sólo las ubicaciones (ciudades). |
 | `npm run seed:usuarios` | Carga sólo los usuarios (administrador). |
 | `npm run seed:prices` | Carga sólo los precios. |
+| `npm run seed:settings` | Carga la configuración de pagos (porcentaje de seña, días de recordatorio, recordatorios activos). |
+| `npm run seed:email-templates` | Carga las plantillas predeterminadas de email de pagos. |
+| `npm run seed:random -- --clients 10 --reset` | Genera clientes, reservas, contratos y pagos demo aleatorios. |
+| `npm run seed:random -- --reset-only` | Elimina sólo los datos demo generados por el seed aleatorio. |
+| `npm run reminders` | Ejecuta manualmente el envío de recordatorios de pago pendientes. |
 
 ### Frontend (`cd frontend`)
 
@@ -276,8 +349,16 @@ La especificación vive en `Backend/src/docs/openapi.js`.
 | El frontend carga pero no trae datos | El backend no está corriendo o está en otro puerto. | Verificar que el backend esté en `http://localhost:3000` o definir `VITE_API_URL`. |
 | Error de versión de Node al iniciar el frontend | Node.js desactualizado o en una rama no soportada (21.x / 22.0–22.11). | Instalar Node.js 20.19+ (rama 20) o 22.12+ (rama 22). |
 | `Prisma Client did not initialize` | No se ejecutó `prisma generate`. | Ejecutar `npm install` en `Backend` o `npx prisma generate`. |
+| No llegan los mails de pago/recordatorio | `SMTP_*` o `MAIL_FROM` no configurados o credenciales inválidas. | Completar las variables SMTP en `Backend/.env`, revisar los logs del backend y reiniciar. |
+| El endpoint de recordatorios responde `401` o `503` | Falta `CRON_SECRET` o el header `Authorization` no coincide. | Definir `CRON_SECRET` en el entorno y enviar `Authorization: Bearer <CRON_SECRET>`. |
+| No se generan las cuotas Seña/Saldo al crear un contrato | No se ejecutó el seed de configuración o el porcentaje está en `0`/`100`. | Ejecutar `npm run seed:settings` o ajustar el porcentaje desde **Gestionar Pagos**. |
 | Error al hacer login (500) | Falta `JWT_SECRET` en `Backend/.env`. | Agregar `JWT_SECRET` al `.env` y reiniciar el backend. |
 | No aparecen ciudades en el formulario | Seed de ubicaciones no ejecutado. | Ejecutar `npm run seed:locations` en `Backend`. |
+| Error `EPERM` al ejecutar `npx prisma generate` | El backend está corriendo y bloquea el motor de Prisma en Windows. | Detener el backend, ejecutar `npx prisma generate` y volver a iniciarlo. |
+| No se puede informar un pago | La cuota no está pendiente, ya tiene un reporte pendiente o el cliente no es el dueño del contrato. | Revisar el estado de la cuota y el usuario autenticado. |
+| No se puede eliminar una cuota | Tiene un reporte pendiente de revisión. | Confirmar o rechazar el reporte primero. |
+| No aparecen las plantillas de email | No se ejecutó el seed o la tabla `EmailTemplate` no existe. | Ejecutar `npx prisma db push` y `npm run seed:email-templates`. |
+| El seed random no crea datos | Faltan localidades o salones base. | Ejecutar `npm run seed:all` antes de `npm run seed:random`. |
 
 ---
 

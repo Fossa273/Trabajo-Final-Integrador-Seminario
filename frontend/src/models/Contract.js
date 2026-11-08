@@ -1,8 +1,11 @@
 /**
  * @typedef {Object} ContractPayment
  * @property {number} idPayment
+ * @property {number} value
  * @property {"pendiente"|"seña"|"pagado"} statusPayment
- * @property {number} [amount]
+ * @property {string|null} [concept]
+ * @property {string|null} [dueDate]
+ * @property {string|null} [notes]
  */
 
 /**
@@ -37,12 +40,6 @@ const STATUS_DESCRIPTION = {
     modificacion_en_curso: "Modificación aprobada — revisá y confirmá"
 };
 
-const PAYMENT_STATUS_LABEL = {
-    pendiente: "Pendiente de abono",
-    "seña": "Seña abonada",
-    pagado: "Saldo abonado"
-};
-
 const EDITABLE_STATUSES = ["generado", "rechazado"];
 
 export class Contract {
@@ -66,10 +63,45 @@ export class Contract {
     }
 
 
+    get paymentsList() {
+        return Array.isArray(this.payments) ? this.payments : [];
+    }
+
+    get paidPayments() {
+        return this.paymentsList.filter((payment) =>
+            ["seña", "pagado"].includes(payment.statusPayment)
+        );
+    }
+
+    get pendingPayments() {
+        return this.paymentsList.filter(
+            (payment) => payment.statusPayment === "pendiente"
+        );
+    }
+
+    get paidTotal() {
+        return this.paidPayments.reduce(
+            (acc, payment) => acc + (Number(payment.value) || 0),
+            0
+        );
+    }
+
+    get pendingTotal() {
+        return this.pendingPayments.reduce(
+            (acc, payment) => acc + (Number(payment.value) || 0),
+            0
+        );
+    }
+
     get paymentStatus() {
-        const payment = this.payments?.[0];
-        if (!payment) return "";
-        return PAYMENT_STATUS_LABEL[payment.statusPayment] || payment.statusPayment;
+        if (this.paymentsList.length === 0) return "";
+        if (this.pendingTotal === 0) return "Pagado";
+        if (this.paidTotal > 0) return "Pago parcial";
+        return "Pendiente";
+    }
+
+    get paymentStatusLabel() {
+        return this.paymentStatus;
     }
 
     get canBeEdited() {
@@ -81,7 +113,7 @@ export class Contract {
     }
 
     get payment() {
-        return this.payments?.[0] || null;
+        return this.paymentsList[0] || null;
     }
 
     get eventDate() {

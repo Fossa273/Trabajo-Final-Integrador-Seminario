@@ -15,21 +15,18 @@ const NOTIFICATION_LABEL = {
     modificacion_solicitada: "Solicitud de modificación",
     modificacion_aprobada: "Modificación aprobada",
     modificacion_rechazada: "Modificación rechazada",
-    modificacion_descartada: "Modificación descartada"
+    modificacion_descartada: "Modificación descartada",
+    pago_pendiente: "Pago pendiente",
+    pago_recordatorio: "Recordatorio de pago",
+    pago_confirmado: "Pago confirmado",
+    pago_informado: "Pago informado",
+    pago_rechazado: "Pago rechazado"
 };
 
 const IconBell = () => (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
         <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-    </svg>
-);
-
-const IconLogout = () => (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-        <polyline points="16 17 21 12 16 7" />
-        <line x1="21" y1="12" x2="9" y2="12" />
     </svg>
 );
 
@@ -53,6 +50,7 @@ function NotificationBell() {
     };
 
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         fetchNotifications();
         const interval = setInterval(fetchNotifications, 30000);
         return () => clearInterval(interval);

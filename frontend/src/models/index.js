@@ -6,3 +6,4 @@ export { LoungeType } from "./LoungeType";
 export { Price } from "./Price";
 export { CardDetail } from "./CardDetail";
 export { ExtraService } from "./ExtraService";
+export { Payment } from "./Payment";

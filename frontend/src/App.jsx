@@ -33,6 +33,7 @@ import NewCardDetail from "./pages/cardDetail/newCardDetail";
 import EditCardDetail from "./pages/cardDetail/editCardDetail";
 import ContractList from "./pages/contract/ContractList";
 import ContractDetail from "./pages/contract/ContractDetail";
+import PaymentList from "./pages/payment/PaymentList";
 import ContractEdit from "./pages/contract/ContractEdit";
 import MyContracts from "./pages/contract/MyContracts";
 
@@ -301,6 +302,14 @@ function App() {
                     element={
                         <ProtectedRoute roles={CLIENTE}>
                             <MyContracts />
+                        </ProtectedRoute>
+                    }
+                />
+                <Route
+                    path="/payment"
+                    element={
+                        <ProtectedRoute roles={ADMIN}>
+                            <PaymentList />
                         </ProtectedRoute>
                     }
                 />

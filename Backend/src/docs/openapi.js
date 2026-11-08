@@ -198,6 +198,10 @@ const paymentSchema = {
             example: "pendiente"
         },
         datePayment: { type: "string", format: "date" },
+        concept: { type: "string", nullable: true, example: "Seña" },
+        dueDate: { type: "string", format: "date", nullable: true },
+        notes: { type: "string", nullable: true },
+        lastReminderAt: { type: "string", format: "date-time", nullable: true },
         idContract: { type: "integer", example: 1 },
         contract: { $ref: "#/components/schemas/Contract" }
     }
@@ -2499,7 +2503,10 @@ const openapi = {
                                         enum: ["pendiente", "seña", "pagado"],
                                         default: "pendiente"
                                     },
-                                    datePayment: { type: "string", format: "date" }
+                                    datePayment: { type: "string", format: "date" },
+                                    concept: { type: "string", example: "Seña" },
+                                    dueDate: { type: "string", format: "date" },
+                                    notes: { type: "string" }
                                 }
                             }
                         }
@@ -2556,6 +2563,9 @@ const openapi = {
                                         enum: ["pendiente", "seña", "pagado"]
                                     },
                                     datePayment: { type: "string", format: "date" },
+                                    concept: { type: "string" },
+                                    dueDate: { type: "string", format: "date", nullable: true },
+                                    notes: { type: "string", nullable: true },
                                     idContract: { type: "integer" }
                                 }
                             }
@@ -2599,6 +2609,188 @@ const openapi = {
                             }
                         }
                     },
+                    401: { $ref: "#/components/responses/Unauthorized" },
+                    403: { $ref: "#/components/responses/Forbidden" },
+                    404: { $ref: "#/components/responses/NotFound" }
+                }
+            }
+        },
+        "/api/payment/settings": {
+            get: {
+                tags: ["payment"],
+                summary: "Obtener configuración de pagos (admin)",
+                security: bearerAuth,
+                responses: {
+                    200: {
+                        description: "Configuración actual.",
+                        content: {
+                            "application/json": {
+                                schema: {
+                                    type: "object",
+                                    properties: {
+                                        depositPercentage: { type: "number", example: 30 },
+                                        reminderDaysBeforeEvent: { type: "integer", example: 7 },
+                                        remindersEnabled: { type: "boolean", example: true }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    401: { $ref: "#/components/responses/Unauthorized" },
+                    403: { $ref: "#/components/responses/Forbidden" }
+                }
+            },
+            put: {
+                tags: ["payment"],
+                summary: "Actualizar configuración de pagos (admin)",
+                security: bearerAuth,
+                requestBody: {
+                    required: true,
+                    content: {
+                        "application/json": {
+                            schema: {
+                                type: "object",
+                                properties: {
+                                    depositPercentage: { type: "number", minimum: 0, maximum: 100 },
+                                    reminderDaysBeforeEvent: { type: "integer", minimum: 0, maximum: 365 },
+                                    remindersEnabled: { type: "boolean" }
+                                }
+                            }
+                        }
+                    }
+                },
+                responses: {
+                    200: {
+                        description: "Configuración actualizada.",
+                        content: {
+                            "application/json": {
+                                schema: {
+                                    type: "object",
+                                    properties: {
+                                        message: { type: "string" },
+                                        settings: {
+                                            type: "object",
+                                            properties: {
+                                                depositPercentage: { type: "number" },
+                                                reminderDaysBeforeEvent: { type: "integer" },
+                                                remindersEnabled: { type: "boolean" }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    400: { $ref: "#/components/responses/ValidationError" },
+                    401: { $ref: "#/components/responses/Unauthorized" },
+                    403: { $ref: "#/components/responses/Forbidden" }
+                }
+            }
+        },
+        "/api/payment/reminders/run": {
+            get: {
+                tags: ["payment"],
+                summary: "Ejecutar recordatorios automáticos (Vercel Cron)",
+                description: "Requiere el header Authorization: Bearer <CRON_SECRET>.",
+                responses: {
+                    200: {
+                        description: "Resultado del proceso.",
+                        content: {
+                            "application/json": {
+                                schema: {
+                                    type: "object",
+                                    properties: {
+                                        message: { type: "string" },
+                                        processed: { type: "integer" },
+                                        sent: { type: "integer" },
+                                        skipped: { type: "integer" }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    401: { $ref: "#/components/responses/Unauthorized" }
+                }
+            },
+            post: {
+                tags: ["payment"],
+                summary: "Ejecutar recordatorios automáticos (manual)",
+                description: "Requiere el header Authorization: Bearer <CRON_SECRET>.",
+                responses: {
+                    200: { description: "Resultado del proceso." },
+                    401: { $ref: "#/components/responses/Unauthorized" }
+                }
+            }
+        },
+        "/api/payment/pending/count": {
+            get: {
+                tags: ["payment"],
+                summary: "Contar pagos pendientes (admin)",
+                security: bearerAuth,
+                responses: {
+                    200: {
+                        description: "Cantidad de pagos pendientes.",
+                        content: {
+                            "application/json": {
+                                schema: {
+                                    type: "object",
+                                    properties: { count: { type: "integer", example: 3 } }
+                                }
+                            }
+                        }
+                    },
+                    401: { $ref: "#/components/responses/Unauthorized" },
+                    403: { $ref: "#/components/responses/Forbidden" }
+                }
+            }
+        },
+        "/api/payment/contract/{idContract}": {
+            parameters: [
+                { name: "idContract", in: "path", required: true, schema: { type: "integer" } }
+            ],
+            get: {
+                tags: ["payment"],
+                summary: "Listar pagos de un contrato (admin)",
+                security: bearerAuth,
+                responses: {
+                    200: {
+                        description: "Pagos del contrato.",
+                        content: {
+                            "application/json": {
+                                schema: { type: "array", items: { $ref: "#/components/schemas/Payment" } }
+                            }
+                        }
+                    },
+                    401: { $ref: "#/components/responses/Unauthorized" },
+                    403: { $ref: "#/components/responses/Forbidden" },
+                    404: { $ref: "#/components/responses/NotFound" }
+                }
+            }
+        },
+        "/api/payment/{id}/reminder": {
+            parameters: [
+                { name: "id", in: "path", required: true, schema: { type: "integer" } }
+            ],
+            post: {
+                tags: ["payment"],
+                summary: "Enviar recordatorio de un pago (admin)",
+                security: bearerAuth,
+                responses: {
+                    200: {
+                        description: "Recordatorio enviado.",
+                        content: {
+                            "application/json": {
+                                schema: {
+                                    type: "object",
+                                    properties: {
+                                        message: { type: "string" },
+                                        sent: { type: "boolean" }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    400: { $ref: "#/components/responses/ValidationError" },
                     401: { $ref: "#/components/responses/Unauthorized" },
                     403: { $ref: "#/components/responses/Forbidden" },
                     404: { $ref: "#/components/responses/NotFound" }

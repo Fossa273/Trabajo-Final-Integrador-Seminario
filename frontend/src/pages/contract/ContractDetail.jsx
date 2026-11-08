@@ -58,6 +58,14 @@ function ContractDetail() {
     const [rejectMotivo, setRejectMotivo] = useState("");
     const [pendingRedirect, setPendingRedirect] = useState(false);
     const [activePrice, setActivePrice] = useState(null);
+    const [reportingPayment, setReportingPayment] = useState(null);
+    const [reportProof, setReportProof] = useState(null);
+    const [reportForm, setReportForm] = useState({
+        reportedPaymentDate: new Date().toISOString().split("T")[0],
+        reportedMethod: "Transferencia",
+        reportedReference: "",
+        reportedNotes: ""
+    });
 
     const rol = localStorage.getItem("sty_rol");
 
@@ -69,6 +77,18 @@ function ContractDetail() {
         "Empresa / Corporativo",
         "Otro"
     ];
+
+    const PAYMENT_STATUS_LABEL = {
+        pendiente: "Pendiente",
+        "seña": "Seña abonada",
+        pagado: "Pagado"
+    };
+
+    const REPORT_STATUS_LABEL = {
+        pendiente: "Pago informado",
+        confirmado: "Confirmado",
+        rechazado: "Rechazado"
+    };
 
     const canEdit = contract?.canBeEdited ?? false;
     const tieneModPendiente = contract?.hasPendingModification ?? false;
@@ -200,18 +220,6 @@ function ContractDetail() {
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [contract?.reservation?.idLoungeType, form.dateEvent]);
-
-    const guestRanges = mountData.loungeTypes
-        .filter(
-            (type) =>
-                String(type.idLounge) ===
-                String(contract?.reservation?.idLounge)
-        )
-        .map((type) => ({
-            min: type.minQuantity,
-            max: type.maxQuantity,
-            label: type.guestRangeLabel
-        }));
 
     const handleChange = (e) => {
         setForm({ ...form, [e.target.name]: e.target.value });
@@ -414,7 +422,7 @@ function ContractDetail() {
         }
     };
 
-    const handleCambiarPago = async (statusPayment) => {
+    const handleCambiarPago = async (payment, statusPayment) => {
         if (!payment) return;
         setMessage(null);
         setSaving(true);
@@ -422,17 +430,89 @@ function ContractDetail() {
         try {
             await paymentService.update(payment.idPayment, { statusPayment });
 
-            setContract({
-                ...contract,
-                payments: [{ ...payment, statusPayment }]
-            });
+            const refreshed = await contractService.getById(id);
+            setContract(refreshed);
 
             showMessage(
                 "success",
                 "Pago actualizado",
                 statusPayment === "pagado"
-                    ? "El saldo fue marcado como abonado."
+                    ? "El pago fue marcado como abonado."
                     : "El pago volvió a estado pendiente."
+            );
+        } catch (error) {
+            showMessage("error", "Error", error.message);
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleRecordarPago = async (payment) => {
+        if (!payment) return;
+        setMessage(null);
+        setSaving(true);
+
+        try {
+            await paymentService.sendReminder(payment.idPayment);
+
+            const refreshed = await contractService.getById(id);
+            setContract(refreshed);
+
+            showMessage(
+                "success",
+                "Recordatorio enviado",
+                "Se notificó al cliente por la campana y por correo (si el SMTP está configurado)."
+            );
+        } catch (error) {
+            showMessage("error", "Error", error.message);
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const openReportModal = (payment) => {
+        setReportingPayment(payment);
+        setReportProof(null);
+        setReportForm({
+            reportedPaymentDate: new Date().toISOString().split("T")[0],
+            reportedMethod: "Transferencia",
+            reportedReference: "",
+            reportedNotes: ""
+        });
+    };
+
+    const handleReportChange = (event) => {
+        const { name, value } = event.target;
+        setReportForm((prev) => ({ ...prev, [name]: value }));
+    };
+
+    const handleReportSubmit = async (event) => {
+        event.preventDefault();
+        if (!reportingPayment) return;
+        setSaving(true);
+
+        try {
+            const formData = new FormData();
+            formData.append("reportedPaymentDate", reportForm.reportedPaymentDate);
+            formData.append("reportedMethod", reportForm.reportedMethod);
+            formData.append("reportedReference", reportForm.reportedReference);
+            formData.append("reportedNotes", reportForm.reportedNotes);
+
+            if (reportProof) {
+                formData.append("proof", reportProof);
+            }
+
+            await paymentService.report(reportingPayment.idPayment, formData);
+
+            const refreshed = await contractService.getById(id);
+            setContract(refreshed);
+            setReportingPayment(null);
+            setReportProof(null);
+
+            showMessage(
+                "success",
+                "Pago informado",
+                "Tu aviso quedó pendiente de confirmación por el administrador."
             );
         } catch (error) {
             showMessage("error", "Error", error.message);
@@ -484,7 +564,13 @@ function ContractDetail() {
 
     const reservation = contract.reservation;
 
-    const payment = contract.payments?.[0] || null;
+    const payments = Array.isArray(contract.payments) ? contract.payments : [];
+    const totalPagado = payments
+        .filter((payment) => ["seña", "pagado"].includes(payment.statusPayment))
+        .reduce((acc, payment) => acc + (Number(payment.value) || 0), 0);
+    const totalPendiente = payments
+        .filter((payment) => payment.statusPayment === "pendiente")
+        .reduce((acc, payment) => acc + (Number(payment.value) || 0), 0);
 
     const fecEvento = form.dateEvent ||
         (reservation?.dateEvent ? reservation.dateEvent.split("T")[0] : "");
@@ -883,52 +969,138 @@ function ContractDetail() {
                     )}
                 </section>
 
-                {/* PAGO (solo admin) */}
-                {rol === "administrador" && (
+                {(rol === "administrador" || rol === "cliente") && (
                     <section className="contract-section">
-                        <h2>Pago</h2>
+                        <h2>Pagos del contrato</h2>
 
-                        {payment ? (
-                            <>
-                                <div className="contract-fields">
-                                    <div className="contract-field">
-                                        <label>Valor</label>
-                                        <span>{currency(payment.value)}</span>
-                                    </div>
-                                    <div className="contract-field">
-                                        <label>Estado</label>
-                                        <span className={`contract-status ${payment.statusPayment}`}>
-                                            {contract.paymentStatus}
-                                        </span>
-                                    </div>
-                                    <div className="contract-field">
-                                        <label>Fecha</label>
-                                        <span>{formatDate(payment.datePayment)}</span>
-                                    </div>
-                                </div>
+                        <div className="contract-payment-summary">
+                            <div>
+                                <span>Valor final</span>
+                                <strong>{currency(contract.finalValue)}</strong>
+                            </div>
+                            <div>
+                                <span>Abonado</span>
+                                <strong className="paid">{currency(totalPagado)}</strong>
+                            </div>
+                            <div>
+                                <span>Saldo pendiente</span>
+                                <strong className="pending">{currency(totalPendiente)}</strong>
+                            </div>
+                        </div>
 
-                                {payment.statusPayment !== "pagado" ? (
-                                    <button
-                                        className="contract-btn-accept"
-                                        onClick={() => handleCambiarPago("pagado")}
-                                        disabled={saving}
-                                    >
-                                        {saving ? "Procesando..." : "Marcar saldo como abonado"}
-                                    </button>
-                                ) : (
-                                    <button
-                                        className="contract-btn-save"
-                                        onClick={() => handleCambiarPago("pendiente")}
-                                        disabled={saving}
-                                    >
-                                        {saving ? "Procesando..." : "Reabrir como pendiente"}
-                                    </button>
-                                )}
-                            </>
+                        {payments.length > 0 ? (
+                            <div className="contract-payment-table-wrap">
+                                <table className="contract-payment-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Concepto</th>
+                                            <th>Monto</th>
+                                            <th>Vencimiento</th>
+                                            <th>Estado</th>
+                                            <th style={{ textAlign: "center" }}>Acciones</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {payments.map((payment) => (
+                                            <tr key={payment.idPayment}>
+                                                <td>{payment.concept || "Cuota"}</td>
+                                                <td>{currency(payment.value)}</td>
+                                                <td>{formatDate(payment.dueDate)}</td>
+                                                <td>
+                                                    <div className="contract-payment-status-stack">
+                                                        <span className={`contract-status ${payment.statusPayment}`}>
+                                                            {PAYMENT_STATUS_LABEL[payment.statusPayment] || payment.statusPayment}
+                                                        </span>
+                                                        {payment.reportStatus && (
+                                                            <span className={`contract-report-status ${payment.reportStatus}`}>
+                                                                {REPORT_STATUS_LABEL[payment.reportStatus] || payment.reportStatus}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </td>
+                                                <td>
+                                                    <div className="contract-payment-actions">
+                                                        {rol === "administrador" ? (
+                                                            payment.statusPayment === "pendiente" ? (
+                                                                <>
+                                                                    <button
+                                                                        type="button"
+                                                                        className="contract-payment-btn paid"
+                                                                        onClick={() => handleCambiarPago(payment, "pagado")}
+                                                                        disabled={saving}
+                                                                    >
+                                                                        Marcar abonado
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        className="contract-payment-btn reminder"
+                                                                        onClick={() => handleRecordarPago(payment)}
+                                                                        disabled={saving || payment.reportStatus === "pendiente"}
+                                                                    >
+                                                                        Recordar
+                                                                    </button>
+                                                                </>
+                                                            ) : (
+                                                                <button
+                                                                    type="button"
+                                                                    className="contract-payment-btn reopen"
+                                                                    onClick={() => handleCambiarPago(payment, "pendiente")}
+                                                                    disabled={saving}
+                                                                >
+                                                                    Reabrir
+                                                                </button>
+                                                            )
+                                                        ) : payment.reportStatus === "pendiente" ? (
+                                                            <span className="contract-payment-hint">
+                                                                Esperando confirmación
+                                                            </span>
+                                                        ) : payment.statusPayment === "pendiente" ? (
+                                                            <button
+                                                                type="button"
+                                                                className="contract-payment-btn report"
+                                                                onClick={() => openReportModal(payment)}
+                                                                disabled={saving}
+                                                            >
+                                                                {payment.reportStatus === "rechazado"
+                                                                    ? "Volver a informar"
+                                                                    : "Informar pago"}
+                                                            </button>
+                                                        ) : (
+                                                            <span className="contract-payment-hint">
+                                                                Sin acciones pendientes
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    {rol === "cliente" &&
+                                                        payment.reportStatus === "rechazado" &&
+                                                        payment.reportReviewNotes && (
+                                                            <p className="contract-payment-reject-note">
+                                                                Motivo: {payment.reportReviewNotes}
+                                                            </p>
+                                                        )}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
                         ) : (
                             <p className="contract-mod-meta">
-                                Este contrato no tiene un pago registrado.
+                                Este contrato no tiene pagos registrados.
                             </p>
+                        )}
+
+                        {rol === "administrador" && (
+                            <div className="contract-actions contract-payment-footer">
+                                <button
+                                    type="button"
+                                    className="contract-btn-primary"
+                                    onClick={() => navigate("/payment")}
+                                    disabled={saving}
+                                >
+                                    Gestionar pagos
+                                </button>
+                            </div>
                         )}
                     </section>
                 )}
@@ -1387,6 +1559,108 @@ function ContractDetail() {
                                 {saving ? "Rechazando..." : "Confirmar rechazo"}
                             </button>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {reportingPayment && (
+                <div className="contract-terms-backdrop" onClick={() => setReportingPayment(null)}>
+                    <div className="contract-terms-modal contract-payment-report-modal" onClick={(e) => e.stopPropagation()}>
+                        <button
+                            className="contract-terms-close"
+                            onClick={() => setReportingPayment(null)}
+                            aria-label="Cerrar"
+                            type="button"
+                        >
+                            ✕
+                        </button>
+                        <h3>Informar pago</h3>
+                        <p className="contract-terms-intro">
+                            Contrato #{contract.idContract} · {reportingPayment.concept || "Cuota"} ·{" "}
+                            {currency(reportingPayment.value)}
+                        </p>
+
+                        <form onSubmit={handleReportSubmit} className="contract-payment-report-form">
+                            <div className="contract-payment-report-grid">
+                                <div className="form-group">
+                                    <label>Fecha de pago</label>
+                                    <input
+                                        type="date"
+                                        name="reportedPaymentDate"
+                                        value={reportForm.reportedPaymentDate}
+                                        onChange={handleReportChange}
+                                        max={new Date().toISOString().split("T")[0]}
+                                        required
+                                    />
+                                </div>
+
+                                <div className="form-group">
+                                    <label>Medio de pago</label>
+                                    <select
+                                        name="reportedMethod"
+                                        value={reportForm.reportedMethod}
+                                        onChange={handleReportChange}
+                                        required
+                                    >
+                                        <option value="Transferencia">Transferencia</option>
+                                        <option value="Efectivo">Efectivo</option>
+                                        <option value="Mercado Pago">Mercado Pago</option>
+                                        <option value="Tarjeta">Tarjeta</option>
+                                        <option value="Otro">Otro</option>
+                                    </select>
+                                </div>
+
+                                <div className="form-group">
+                                    <label>Referencia / comprobante</label>
+                                    <input
+                                        type="text"
+                                        name="reportedReference"
+                                        value={reportForm.reportedReference}
+                                        onChange={handleReportChange}
+                                        placeholder="Número de operación"
+                                        maxLength={100}
+                                    />
+                                </div>
+
+                                <div className="form-group">
+                                    <label>Comprobante (opcional)</label>
+                                    <input
+                                        type="file"
+                                        accept="image/jpeg,image/png,image/webp,image/gif,application/pdf"
+                                        onChange={(event) =>
+                                            setReportProof(event.target.files?.[0] || null)
+                                        }
+                                    />
+                                    <small>JPG, PNG, WEBP, GIF o PDF. Máximo 5 MB.</small>
+                                </div>
+
+                                <div className="form-group full-width">
+                                    <label>Notas</label>
+                                    <textarea
+                                        name="reportedNotes"
+                                        value={reportForm.reportedNotes}
+                                        onChange={handleReportChange}
+                                        placeholder="Información adicional del pago..."
+                                        maxLength={500}
+                                        rows={3}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="contract-terms-actions">
+                                <button
+                                    type="button"
+                                    className="contract-btn-save"
+                                    onClick={() => setReportingPayment(null)}
+                                    disabled={saving}
+                                >
+                                    Cancelar
+                                </button>
+                                <button type="submit" className="contract-btn-accept" disabled={saving}>
+                                    {saving ? "Enviando..." : "Informar pago"}
+                                </button>
+                            </div>
+                        </form>
                     </div>
                 </div>
             )}
