@@ -281,7 +281,11 @@ async function createDemoData() {
         select: { idLocation: true, city: true }
     });
     const loungeTypes = await prisma.loungeType.findMany({
-        where: { activo: true, lounge: { activo: true } },
+        where: {
+            activo: true,
+            lounge: { activo: true },
+            prices: { some: {} }
+        },
         select: {
             idLoungeType: true,
             idLounge: true,
