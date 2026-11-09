@@ -59,6 +59,114 @@ const LOUNGES = [
         types: [
             { nameLoungeType: "Reserva", minQuantity: 50, maxQuantity: 100 }
         ]
+    },
+    {
+        name: "Stylo Belgrano",
+        loungeAddress: "Av. Cabildo 2230",
+        city: "Buenos Aires",
+        types: [
+            { nameLoungeType: "Imperial", minQuantity: 120, maxQuantity: 200 },
+            { nameLoungeType: "Ejecutivo", minQuantity: 60, maxQuantity: 120 }
+        ]
+    },
+    {
+        name: "Stylo San Isidro",
+        loungeAddress: "Av. Centenario 1450",
+        city: "San Isidro",
+        types: [
+            { nameLoungeType: "Clásico", minQuantity: 80, maxQuantity: 140 },
+            { nameLoungeType: "Íntimo", minQuantity: 40, maxQuantity: 80 }
+        ]
+    },
+    {
+        name: "Stylo Tigre",
+        loungeAddress: "Av. Liniers 890",
+        city: "Tigre",
+        types: [
+            { nameLoungeType: "Premium", minQuantity: 100, maxQuantity: 180 }
+        ]
+    },
+    {
+        name: "Stylo Mar del Plata",
+        loungeAddress: "Av. Luro 2750",
+        city: "Mar del Plata",
+        types: [
+            { nameLoungeType: "Grande", minQuantity: 90, maxQuantity: 130 },
+            { nameLoungeType: "Chico", minQuantity: 70, maxQuantity: 90 }
+        ]
+    },
+    {
+        name: "Stylo Santa Fe",
+        loungeAddress: "Av. Litoral 780",
+        city: "Santa Fe",
+        types: [
+            { nameLoungeType: "Reina", minQuantity: 52, maxQuantity: 123 }
+        ]
+    },
+    {
+        name: "Stylo Salta",
+        loungeAddress: "Caseros 720",
+        city: "Salta",
+        types: [
+            { nameLoungeType: "Princesa", minQuantity: 100, maxQuantity: 150 }
+        ]
+    },
+    {
+        name: "Stylo Tucumán",
+        loungeAddress: "Av. Aconquija 1200",
+        city: "San Miguel de Tucumán",
+        types: [
+            { nameLoungeType: "Clásico", minQuantity: 80, maxQuantity: 140 }
+        ]
+    },
+    {
+        name: "Stylo Neuquén",
+        loungeAddress: "Av. Argentina 420",
+        city: "Neuquén",
+        types: [
+            { nameLoungeType: "Ejecutivo", minQuantity: 60, maxQuantity: 120 }
+        ]
+    },
+    {
+        name: "Stylo Bariloche",
+        loungeAddress: "Av. Bustillo 9500",
+        city: "San Carlos de Bariloche",
+        types: [
+            { nameLoungeType: "Premium", minQuantity: 100, maxQuantity: 180 },
+            { nameLoungeType: "Reserva", minQuantity: 50, maxQuantity: 100 }
+        ]
+    },
+    {
+        name: "Stylo Bahía Blanca",
+        loungeAddress: "Av. Alem 1350",
+        city: "Bahía Blanca",
+        types: [
+            { nameLoungeType: "Grande", minQuantity: 90, maxQuantity: 130 }
+        ]
+    },
+    {
+        name: "Stylo Corrientes",
+        loungeAddress: "Junín 640",
+        city: "Corrientes",
+        types: [
+            { nameLoungeType: "Íntimo", minQuantity: 40, maxQuantity: 80 }
+        ]
+    },
+    {
+        name: "Stylo San Juan",
+        loungeAddress: "Av. Ignacio de la Roza 1100",
+        city: "San Juan",
+        types: [
+            { nameLoungeType: "Reina", minQuantity: 52, maxQuantity: 123 }
+        ]
+    },
+    {
+        name: "Stylo Paraná",
+        loungeAddress: "Av. Ramírez 980",
+        city: "Paraná",
+        types: [
+            { nameLoungeType: "Clásico", minQuantity: 80, maxQuantity: 140 }
+        ]
     }
 ];
 

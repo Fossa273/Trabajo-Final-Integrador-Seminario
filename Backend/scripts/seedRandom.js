@@ -1,7 +1,13 @@
 import bcrypt from "bcryptjs";
 import prisma from "../src/lib/prisma.js";
+import {
+    buildDemoEmail,
+    isLegacyDemoEmail,
+    readDemoEmails,
+    trackDemoEmails,
+    clearDemoEmails
+} from "./demoEmail.js";
 
-const DEMO_DOMAIN = "@demo.stylo.test";
 const DEMO_PASSWORD = "demo123";
 const NAMES = [
     "Lucía",
@@ -104,17 +110,25 @@ function round(value) {
 }
 
 async function resetDemoData() {
+    const trackedEmails = new Set(
+        (await readDemoEmails()).map((email) => email.toLowerCase())
+    );
+
     const clients = await prisma.client.findMany({
-        where: { emailCli: { endsWith: DEMO_DOMAIN } },
-        select: { idCli: true }
+        select: { idCli: true, emailCli: true }
     });
-    const clientIds = clients.map((client) => client.idCli);
+    const demoClients = clients.filter((client) =>
+        trackedEmails.has(String(client.emailCli).toLowerCase()) ||
+        isLegacyDemoEmail(client.emailCli)
+    );
+    const clientIds = demoClients.map((client) => client.idCli);
 
     const users = await prisma.usuario.findMany({
         where: {
             OR: [
                 { idCli: { in: clientIds } },
-                { username: { endsWith: DEMO_DOMAIN } }
+                { username: { contains: "+stylo" } },
+                { username: { endsWith: "@demo.stylo.test" } }
             ]
         },
         select: { idUsuario: true }
@@ -158,6 +172,7 @@ async function resetDemoData() {
     });
     await prisma.usuario.deleteMany({ where: { idUsuario: { in: userIds } } });
     await prisma.client.deleteMany({ where: { idCli: { in: clientIds } } });
+    await clearDemoEmails();
 
     return {
         clients: clientIds.length,
@@ -191,13 +206,24 @@ async function createDemoData({ clients: clientsCount, seed }, random) {
     }
 
     const hashedPassword = await bcrypt.hash(DEMO_PASSWORD, 10);
-    const runId = Date.now().toString(36);
     const createdClients = [];
 
     for (let index = 0; index < clientsCount; index += 1) {
         const nameCli = random.pick(NAMES);
         const surnameCli = random.pick(SURNAMES);
-        const emailCli = `demo.${runId}.${index + 1}${DEMO_DOMAIN}`;
+        let emailCli = buildDemoEmail({ name: nameCli, surname: surnameCli });
+        let emailSuffix = 1;
+
+        while (
+            await prisma.usuario.findUnique({ where: { username: emailCli } })
+        ) {
+            emailSuffix += 1;
+            emailCli = buildDemoEmail({
+                name: nameCli,
+                surname: surnameCli,
+                suffix: emailSuffix
+            });
+        }
         const location = random.pick(locations);
         const loungeType = random.pick(loungeTypes);
         const eventDate = randomDate(random, 15, 240);
@@ -337,6 +363,8 @@ async function createDemoData({ clients: clientsCount, seed }, random) {
 
         createdClients.push({ emailCli, contractId: contract.idContract });
     }
+
+    await trackDemoEmails(createdClients.map((client) => client.emailCli));
 
     return createdClients;
 }

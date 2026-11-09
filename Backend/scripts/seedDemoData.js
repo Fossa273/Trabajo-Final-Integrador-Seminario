@@ -1,22 +1,34 @@
 import bcrypt from "bcryptjs";
 import prisma from "../src/lib/prisma.js";
+import DEFAULT_CONTRACT_CONTENT from "../src/data/contractContent.js";
+import { buildDemoEmail, trackDemoEmails } from "./demoEmail.js";
 
-const DEMO_DOMAIN = "@demo.stylo.test";
 const DEMO_PASSWORD = "demo123";
 
+// 20 clientes demo. Cada uno genera una cadena completa y correlacionada:
+// Client -> Usuario -> Reservation -> Contract -> (ReservationExtraService /
+// ContractExtraService) -> Payments -> Notification.
 const DEMO_CLIENTS = [
-    { name: "Lucía", surname: "Gómez", city: "Rosario", phone: "3415551001", dni: 30111001 },
-    { name: "Mateo", surname: "Rodríguez", city: "Buenos Aires", phone: "1145551002", dni: 30111002 },
-    { name: "Sofía", surname: "Fernández", city: "La Plata", phone: "2215551003", dni: 30111003 },
-    { name: "Valentina", surname: "López", city: "Córdoba", phone: "3515551004", dni: 30111004 },
-    { name: "Joaquín", surname: "Martínez", city: "Mendoza", phone: "2615551005", dni: 30111005 },
-    { name: "Martina", surname: "Pérez", city: "Rosario", phone: "3415551006", dni: 30111006 },
-    { name: "Santiago", surname: "Sosa", city: "Santa Fe", phone: "3425551007", dni: 30111007 },
-    { name: "Camila", surname: "Romero", city: "Buenos Aires", phone: "1145551008", dni: 30111008 },
-    { name: "Benjamín", surname: "Díaz", city: "Córdoba", phone: "3515551009", dni: 30111009 },
-    { name: "Julieta", surname: "Álvarez", city: "La Plata", phone: "2215551010", dni: 30111010 },
-    { name: "Agustín", surname: "Torres", city: "Mendoza", phone: "2615551011", dni: 30111011 },
-    { name: "Florencia", surname: "Ruiz", city: "Rosario", phone: "3415551012", dni: 30111012 }
+    { name: "Lucía", surname: "Gómez", city: "Rosario", phone: "3415551001", dni: 30111001, address: "Av. Pellegrini 1200" },
+    { name: "Mateo", surname: "Rodríguez", city: "Buenos Aires", phone: "1145551002", dni: 30111002, address: "Av. Santa Fe 2350" },
+    { name: "Sofía", surname: "Fernández", city: "La Plata", phone: "2215551003", dni: 30111003, address: "Calle 50 1234" },
+    { name: "Valentina", surname: "López", city: "Córdoba", phone: "3515551004", dni: 30111004, address: "Av. Colón 567" },
+    { name: "Joaquín", surname: "Martínez", city: "Mendoza", phone: "2615551005", dni: 30111005, address: "San Martín 890" },
+    { name: "Martina", surname: "Pérez", city: "Rosario", phone: "3415551006", dni: 30111006, address: "Urquiza 3455" },
+    { name: "Santiago", surname: "Sosa", city: "Santa Fe", phone: "3425551007", dni: 30111007, address: "Av. Litoral 780" },
+    { name: "Camila", surname: "Romero", city: "Buenos Aires", phone: "1145551008", dni: 30111008, address: "Av. Cabildo 1890" },
+    { name: "Benjamín", surname: "Díaz", city: "Córdoba", phone: "3515551009", dni: 30111009, address: "Av. Rafael Núñez 4321" },
+    { name: "Julieta", surname: "Álvarez", city: "La Plata", phone: "2215551010", dni: 30111010, address: "Diagonal 74 1560" },
+    { name: "Agustín", surname: "Torres", city: "Mendoza", phone: "2615551011", dni: 30111011, address: "Godoy Cruz 1540" },
+    { name: "Florencia", surname: "Ruiz", city: "Rosario", phone: "3415551012", dni: 30111012, address: "Av. Francia 2100" },
+    { name: "Nicolás", surname: "Herrera", city: "Salta", phone: "3875551013", dni: 30111013, address: "Caseros 720" },
+    { name: "Micaela", surname: "Castro", city: "San Juan", phone: "2645551014", dni: 30111014, address: "Av. Ignacio de la Roza 1100" },
+    { name: "Facundo", surname: "Vargas", city: "Neuquén", phone: "2995551015", dni: 30111015, address: "Av. Argentina 420" },
+    { name: "Abril", surname: "Ramírez", city: "Mar del Plata", phone: "2235551016", dni: 30111016, address: "Av. Luro 2750" },
+    { name: "Tomás", surname: "Acosta", city: "Bahía Blanca", phone: "2915551017", dni: 30111017, address: "Av. Alem 1350" },
+    { name: "Renata", surname: "Molina", city: "Corrientes", phone: "3795551018", dni: 30111018, address: "Junín 640" },
+    { name: "Bruno", surname: "Cabrera", city: "Paraná", phone: "3435551019", dni: 30111019, address: "Av. Ramírez 980" },
+    { name: "Delfina", surname: "Ortiz", city: "San Carlos de Bariloche", phone: "2945551020", dni: 30111020, address: "Mitre 350" }
 ];
 
 const EVENT_TYPES = [
@@ -28,6 +40,21 @@ const EVENT_TYPES = [
 ];
 
 const METHODS = ["Transferencia", "Efectivo", "Mercado Pago", "Tarjeta"];
+
+// 10 escenarios que se repiten dos veces (20 clientes). Cada uno define el
+// estado del contrato/reserva y la forma de pago correlacionada.
+const SCENARIOS = [
+    { contract: "firmado", reservation: "confirmada", mode: "legacy", depositPaid: true, balancePaid: false, balanceReport: null },
+    { contract: "firmado", reservation: "confirmada", mode: "legacy", depositPaid: true, balancePaid: true, balanceReport: null },
+    { contract: "firmado", reservation: "confirmada", mode: "legacy", depositPaid: true, balancePaid: false, balanceReport: "pendiente" },
+    { contract: "firmado", reservation: "confirmada", mode: "installments", installments: 3, paidInstallments: 1, reportOnNext: null },
+    { contract: "firmado", reservation: "confirmada", mode: "installments", installments: 3, paidInstallments: 1, reportOnNext: "rechazado" },
+    { contract: "generado", reservation: "pendiente", mode: "legacy", depositPaid: false, balancePaid: false, balanceReport: null },
+    { contract: "rechazado", reservation: "pendiente", mode: "legacy", depositPaid: false, balancePaid: false, balanceReport: null },
+    { contract: "en_revision", reservation: "pendiente", mode: "legacy", depositPaid: false, balancePaid: false, balanceReport: "pendiente" },
+    { contract: "aprobado", reservation: "confirmada", mode: "legacy", depositPaid: true, balancePaid: false, balanceReport: null },
+    { contract: "firmado", reservation: "confirmada", mode: "installments", installments: 5, paidInstallments: 2, reportOnNext: "pendiente" }
+];
 
 function dateOnly(value) {
     const date = new Date(value);
@@ -70,8 +97,26 @@ function splitAmount(total, parts) {
     });
 }
 
-function reportFields(scenario, eventDate, index) {
-    if (scenario === 2 || scenario === 7) {
+function timeAt(hour, minute = 0) {
+    return new Date(Date.UTC(1970, 0, 1, hour, minute, 0, 0));
+}
+
+async function getActivePrice(idLoungeType, dateEvent) {
+    const prices = await prisma.price.findMany({
+        where: {
+            idLoungeType,
+            effectiveDate: { lte: dateEvent },
+            OR: [{ endDate: null }, { endDate: { gte: dateEvent } }]
+        },
+        orderBy: { effectiveDate: "desc" },
+        take: 1
+    });
+
+    return prices[0] ? Number(prices[0].value) : 0;
+}
+
+function reportFields(kind, index) {
+    if (kind === "pendiente") {
         return {
             reportedAt: new Date(),
             reportedPaymentDate: addDays(new Date(), -(index + 1)),
@@ -84,7 +129,7 @@ function reportFields(scenario, eventDate, index) {
         };
     }
 
-    if (scenario === 4) {
+    if (kind === "rechazado") {
         return {
             reportedAt: new Date(),
             reportedPaymentDate: addDays(new Date(), -(index + 2)),
@@ -109,40 +154,38 @@ function reportFields(scenario, eventDate, index) {
     };
 }
 
-async function createPayment(data) {
-    return await prisma.payment.create({ data });
-}
-
 async function createLegacyPayments(contract, finalValue, eventDate, scenario, index) {
     const depositValue = round(finalValue * 0.3);
     const balanceValue = round(finalValue - depositValue);
     const dueDate = addDays(eventDate, -10);
     const paymentDate = addDays(new Date(), -(index + 5));
 
-    const depositPaid = ![2, 5].includes(scenario);
-    const balancePaid = [1, 8].includes(scenario);
-    const report = reportFields(scenario, eventDate, index);
-
-    await createPayment({
-        value: depositValue,
-        statusPayment: depositPaid ? "seña" : "pendiente",
-        datePayment: depositPaid ? paymentDate : dateOnly(new Date()),
-        concept: "Seña",
-        dueDate,
-        notes: "Seña del contrato.",
-        idContract: contract.idContract
+    await prisma.payment.create({
+        data: {
+            value: depositValue,
+            statusPayment: scenario.depositPaid ? "seña" : "pendiente",
+            datePayment: scenario.depositPaid ? paymentDate : dateOnly(new Date()),
+            concept: "Seña",
+            dueDate,
+            notes: "Seña del contrato.",
+            idContract: contract.idContract
+        }
     });
 
-    if (scenario !== 5) {
-        await createPayment({
-            value: balanceValue,
-            statusPayment: balancePaid ? "pagado" : "pendiente",
-            datePayment: balancePaid ? paymentDate : dateOnly(new Date()),
-            concept: "Saldo",
-            dueDate: scenario === 9 ? addDays(new Date(), -15) : dueDate,
-            notes: "Saldo restante del contrato.",
-            ...report,
-            idContract: contract.idContract
+    if (!scenario.skipBalance) {
+        await prisma.payment.create({
+            data: {
+                value: balanceValue,
+                statusPayment: scenario.balancePaid ? "pagado" : "pendiente",
+                datePayment: scenario.balancePaid ? paymentDate : dateOnly(new Date()),
+                concept: "Saldo",
+                dueDate: scenario.balanceReport === "pendiente"
+                    ? addDays(new Date(), -15)
+                    : dueDate,
+                notes: "Saldo restante del contrato.",
+                ...reportFields(scenario.balanceReport, index),
+                idContract: contract.idContract
+            }
         });
     }
 }
@@ -150,47 +193,86 @@ async function createLegacyPayments(contract, finalValue, eventDate, scenario, i
 async function createInstallmentPayments(contract, finalValue, eventDate, scenario, index) {
     const depositValue = round(finalValue * 0.3);
     const remaining = round(finalValue - depositValue);
-    const count = scenario === 10 ? 5 : 3;
-    const amounts = splitAmount(remaining, count);
-    const firstDueDate = addDays(new Date(), 15 + index);
-    const paidInstallments = scenario === 10 ? 2 : 1;
+    const amounts = splitAmount(remaining, scenario.installments);
+    const firstDueDate = addDays(new Date(), 10 + index);
 
-    await createPayment({
-        value: depositValue,
-        statusPayment: "seña",
-        datePayment: addDays(new Date(), -(index + 8)),
-        concept: "Cuota #1",
-        dueDate: addDays(eventDate, -30),
-        notes: "Seña. Cuota inicial del plan.",
-        idContract: contract.idContract
+    await prisma.payment.create({
+        data: {
+            value: depositValue,
+            statusPayment: "seña",
+            datePayment: addDays(new Date(), -(index + 8)),
+            concept: "Cuota #1",
+            dueDate: addDays(eventDate, -30),
+            notes: "Seña. Cuota inicial del plan.",
+            idContract: contract.idContract
+        }
     });
 
     for (let i = 0; i < amounts.length; i += 1) {
         const number = i + 2;
-        const isPaid = i < paidInstallments;
-        let report = reportFields(-1, eventDate, index);
+        const isPaid = i < scenario.paidInstallments;
+        let report = reportFields(null, index);
 
-        if (!isPaid && i === paidInstallments) {
-            if (scenario === 10) {
-                report = reportFields(7, eventDate, index);
-            } else if (scenario === 4) {
-                report = reportFields(4, eventDate, index);
-            }
+        if (!isPaid && i === scenario.paidInstallments && scenario.reportOnNext) {
+            report = reportFields(scenario.reportOnNext, index);
         }
 
-        await createPayment({
-            value: amounts[i],
-            statusPayment: isPaid ? "pagado" : "pendiente",
-            datePayment: isPaid
-                ? addDays(new Date(), -(index + i + 2))
-                : dateOnly(new Date()),
-            concept: `Cuota #${number}`,
-            dueDate: addMonths(firstDueDate, i),
-            notes: i === 0 ? "Interés aplicado: $0.00." : null,
-            ...report,
-            idContract: contract.idContract
+        const dueDate = addMonths(firstDueDate, i);
+
+        await prisma.payment.create({
+            data: {
+                value: amounts[i],
+                statusPayment: isPaid ? "pagado" : "pendiente",
+                datePayment: isPaid
+                    ? addDays(dueDate, -(i + 1))
+                    : dateOnly(new Date()),
+                concept: `Cuota #${number}`,
+                dueDate,
+                notes: i === 0 ? "Interés aplicado: $0.00." : null,
+                ...report,
+                idContract: contract.idContract
+            }
         });
     }
+}
+
+async function createNotification({ admin, usuario, contract, index, scenario }) {
+    const targetAdmin = index % 2 === 0 || !usuario;
+    let mensaje;
+    let tipo;
+
+    if (scenario.contract === "en_revision") {
+        mensaje = `El cliente envió el contrato #${contract.idContract} para revisión.`;
+        tipo = "contrato_enviado";
+    } else if (scenario.contract === "aprobado") {
+        mensaje = `El contrato #${contract.idContract} fue aprobado. Quedó listo para firmar.`;
+        tipo = "contrato_revisado";
+    } else if (scenario.contract === "rechazado") {
+        mensaje = `El contrato #${contract.idContract} fue rechazado. Corregí los datos y enviá de nuevo.`;
+        tipo = "contrato_revisado";
+    } else if (scenario.balanceReport === "pendiente" || scenario.reportOnNext === "pendiente") {
+        mensaje = `El contrato #${contract.idContract} tiene un pago informado pendiente de revisión.`;
+        tipo = "pago_informado";
+    } else if (scenario.balanceReport === "rechazado" || scenario.reportOnNext === "rechazado") {
+        mensaje = `El comprobante de pago del contrato #${contract.idContract} fue rechazado.`;
+        tipo = "pago_rechazado";
+    } else if (scenario.contract === "firmado") {
+        mensaje = `Se registró un nuevo pago para el contrato #${contract.idContract}.`;
+        tipo = "pago_confirmado";
+    } else {
+        mensaje = `El contrato #${contract.idContract} tiene pagos pendientes.`;
+        tipo = "pago_pendiente";
+    }
+
+    await prisma.notification.create({
+        data: {
+            mensaje,
+            tipo,
+            idContract: contract.idContract,
+            idUsuario: targetAdmin ? admin.idUsuario : usuario.idUsuario,
+            leida: index % 3 === 0
+        }
+    });
 }
 
 async function createDemoData() {
@@ -211,7 +293,7 @@ async function createDemoData() {
     });
     const cardDetails = await prisma.cardDetail.findMany({
         where: { activo: true },
-        select: { idCardDetail: true },
+        select: { idCardDetail: true, budget: true },
         orderBy: { idCardDetail: "asc" }
     });
     const extraServices = await prisma.extraService.findMany({
@@ -224,9 +306,15 @@ async function createDemoData() {
         select: { idUsuario: true }
     });
 
-    if (!locations.length || !loungeTypes.length) {
+    if (!locations.length || !loungeTypes.length || !cardDetails.length) {
         throw new Error(
-            "Faltan localidades o salones. Ejecutá primero npm run seed:all."
+            "Faltan localidades, salones o menús. Ejecutá primero npm run seed:all."
+        );
+    }
+
+    if (!admin) {
+        throw new Error(
+            "Falta un usuario administrador. Ejecutá primero npm run seed:usuarios."
         );
     }
 
@@ -234,10 +322,14 @@ async function createDemoData() {
     let createdClients = 0;
     let createdContracts = 0;
     let createdPayments = 0;
+    let createdNotifications = 0;
 
     for (let index = 0; index < DEMO_CLIENTS.length; index += 1) {
         const item = DEMO_CLIENTS[index];
-        const emailCli = `demo.${String(index + 1).padStart(2, "0")}${DEMO_DOMAIN}`;
+        const emailCli = buildDemoEmail({
+            name: item.name,
+            surname: item.surname
+        });
 
         const existing = await prisma.client.findFirst({
             where: { emailCli },
@@ -248,18 +340,18 @@ async function createDemoData() {
             continue;
         }
 
+        const scenario = SCENARIOS[index % SCENARIOS.length];
         const location =
             locations.find((row) => row.city === item.city) || locations[0];
         const loungeType = loungeTypes[index % loungeTypes.length];
-        const cardDetail = cardDetails.length
-            ? cardDetails[index % cardDetails.length]
-            : null;
-        const eventDate = addDays(new Date(), 20 + index * 18);
-        const reservationDate = addDays(new Date(), -(10 + index * 4));
-        const cantInvit =
+        const cardDetail = cardDetails[index % cardDetails.length];
+        const eventDate = addDays(new Date(), 25 + index * 16);
+        const reservationDate = addDays(new Date(), -(12 + index * 3));
+        const cantInvit = Math.min(
+            loungeType.maxQuantity,
             loungeType.minQuantity +
-            ((index * 7) % Math.max(1, loungeType.maxQuantity - loungeType.minQuantity));
-        const scenario = index % 12;
+                ((index * 7) % Math.max(1, loungeType.maxQuantity - loungeType.minQuantity + 1))
+        );
 
         const client = await prisma.client.create({
             data: {
@@ -267,13 +359,13 @@ async function createDemoData() {
                 surnameCli: item.surname,
                 phoneCli: item.phone,
                 dniCli: item.dni,
-                addressCli: `Calle ${100 + index * 13} ${20 + index}`,
+                addressCli: item.address,
                 emailCli,
                 idLocation: location.idLocation
             }
         });
 
-        await prisma.usuario.create({
+        const usuario = await prisma.usuario.create({
             data: {
                 username: emailCli,
                 password: hashedPassword,
@@ -287,39 +379,27 @@ async function createDemoData() {
             data: {
                 dateReservation: reservationDate,
                 dateEvent: eventDate,
-                status: ["confirmada", "aceptada", "pendiente"][index % 3],
+                status: scenario.reservation,
                 eventType: EVENT_TYPES[index % EVENT_TYPES.length],
                 cantInvit,
                 maxCantInvit: loungeType.maxQuantity,
                 idCli: client.idCli,
                 idLounge: loungeType.idLounge,
                 idLoungeType: loungeType.idLoungeType,
-                idCardDetail: cardDetail ? cardDetail.idCardDetail : null
+                idCardDetail: cardDetail.idCardDetail
             }
         });
 
-        const selectedExtras = extraServices.filter(
-            (_, extraIndex) =>
-                extraIndex > 0 && (extraIndex + index) % 4 === 0
-        );
+        const extraCount = index % 4;
+        const extraStart = (index * 3) % Math.max(1, extraServices.length);
+        const selectedExtras = Array.from({ length: extraCount }, (_, extraIndex) =>
+            extraServices[(extraStart + extraIndex) % extraServices.length]
+        ).filter(Boolean);
+
         const extrasTotal = selectedExtras.reduce(
             (acc, extra) => acc + Number(extra.cost),
             0
         );
-        const baseValue = 1200000 + (index % 5) * 250000;
-        const finalValue = round(baseValue + extrasTotal);
-
-        const contract = await prisma.contract.create({
-            data: {
-                eventStartTime: new Date("1970-01-01T20:00:00.000Z"),
-                eventEndTime: new Date("1970-01-01T04:00:00.000Z"),
-                dateContract: reservationDate,
-                finalValue,
-                status: ["firmado", "aprobado", "generado", "en_revision"][index % 4],
-                cantExactaInvit: cantInvit,
-                idReservation: reservation.idReservation
-            }
-        });
 
         if (selectedExtras.length) {
             await prisma.reservationExtraService.createMany({
@@ -328,6 +408,29 @@ async function createDemoData() {
                     idService: extra.idService
                 }))
             });
+        }
+
+        const priceSalon = await getActivePrice(
+            loungeType.idLoungeType,
+            eventDate
+        );
+        const menuValue = Number(cardDetail.budget) * cantInvit;
+        const finalValue = round(priceSalon + menuValue + extrasTotal);
+
+        const contract = await prisma.contract.create({
+            data: {
+                eventStartTime: timeAt(index % 2 === 0 ? 20 : 21),
+                eventEndTime: timeAt(index % 2 === 0 ? 3 : 4),
+                dateContract: reservationDate,
+                finalValue,
+                status: scenario.contract,
+                cantExactaInvit: cantInvit,
+                clausulas: DEFAULT_CONTRACT_CONTENT,
+                idReservation: reservation.idReservation
+            }
+        });
+
+        if (selectedExtras.length) {
             await prisma.contractExtraService.createMany({
                 data: selectedExtras.map((extra) => ({
                     idContract: contract.idContract,
@@ -340,7 +443,7 @@ async function createDemoData() {
             where: { idContract: contract.idContract }
         });
 
-        if (scenario >= 3 && scenario <= 5 || scenario >= 10) {
+        if (scenario.mode === "installments") {
             await createInstallmentPayments(
                 contract,
                 finalValue,
@@ -363,42 +466,46 @@ async function createDemoData() {
         });
         createdPayments += afterPayments - beforePayments;
 
-        if (admin && index < 6) {
-            const mensaje = index % 2 === 0
-                ? `El contrato #${contract.idContract} tiene pagos pendientes de revisión.`
-                : `Se registró un nuevo pago para el contrato #${contract.idContract}.`;
-            const existingNotification = await prisma.notification.findFirst({
-                where: { idContract: contract.idContract, mensaje }
-            });
-
-            if (!existingNotification) {
-                await prisma.notification.create({
-                    data: {
-                        mensaje,
-                        tipo: index % 2 === 0 ? "pago_pendiente" : "pago_confirmado",
-                        idContract: contract.idContract,
-                        idUsuario: admin.idUsuario,
-                        leida: index % 3 === 0
-                    }
-                });
-            }
-        }
+        await createNotification({
+            admin,
+            usuario,
+            contract,
+            index,
+            scenario
+        });
+        createdNotifications += 1;
 
         createdClients++;
         createdContracts++;
     }
 
-    return { createdClients, createdContracts, createdPayments };
+    await trackDemoEmails(
+        DEMO_CLIENTS.map((item) =>
+            buildDemoEmail({ name: item.name, surname: item.surname })
+        )
+    );
+
+    return {
+        createdClients,
+        createdContracts,
+        createdPayments,
+        createdNotifications
+    };
 }
 
 async function main() {
     const result = await createDemoData();
 
     console.log(
-        `Seed de demo finalizado: ${result.createdClients} clientes, ${result.createdContracts} contratos y ${result.createdPayments} pagos creados.`
+        `Seed de demo finalizado: ${result.createdClients} clientes, ${result.createdContracts} contratos, ${result.createdPayments} pagos y ${result.createdNotifications} notificaciones creados.`
     );
     console.log(`Contraseña para clientes demo: ${DEMO_PASSWORD}`);
-    console.log(`Ejemplo de acceso: demo.01${DEMO_DOMAIN}`);
+    console.log(
+        `Ejemplo de acceso: ${buildDemoEmail({
+            name: DEMO_CLIENTS[0].name,
+            surname: DEMO_CLIENTS[0].surname
+        })}`
+    );
 
     await prisma.$disconnect();
 }

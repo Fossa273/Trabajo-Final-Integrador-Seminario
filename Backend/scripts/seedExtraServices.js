@@ -60,6 +60,46 @@ const EXTRA_SERVICES = [
         nameService: "Pista de luces LED",
         detailService: "Iluminación LED programable para pista de baile",
         cost: 52000.0
+    },
+    {
+        nameService: "Maestro de ceremonias",
+        detailService: "Conducción profesional del evento y coordinación de momentos",
+        cost: 65000.0
+    },
+    {
+        nameService: "Show de fuegos artificiales",
+        detailService: "Espectáculo pirotécnico frío para el cierre del evento",
+        cost: 90000.0
+    },
+    {
+        nameService: "Candy bar",
+        detailService: "Mesa dulce con golosinas, macarons y chocolate artesanal",
+        cost: 58000.0
+    },
+    {
+        nameService: "Coffee break",
+        detailService: "Estación de café de especialidad, té e infusiones con pastelería",
+        cost: 34000.0
+    },
+    {
+        nameService: "Guardarropas",
+        detailService: "Servicio de guardarropas con personal durante todo el evento",
+        cost: 28000.0
+    },
+    {
+        nameService: "Cronometraje de invitados",
+        detailService: "Recepción y acreditación digital de invitados con pulseras",
+        cost: 36000.0
+    },
+    {
+        nameService: "Dron y video 360",
+        detailService: "Cobertura aérea y video inmersivo 360 del evento",
+        cost: 72000.0
+    },
+    {
+        nameService: "Sector de juegos",
+        detailService: "Espacio recreativo con juegos de mesa gigantes y consolas",
+        cost: 46000.0
     }
 ];
 

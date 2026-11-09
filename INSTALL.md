@@ -272,7 +272,7 @@ npm run seed:random -- --clients 5 --seed 12345
 npm run seed:random -- --reset-only
 ```
 
-Los clientes demo usan emails terminados en `@demo.stylo.test` y contraseña `demo123`. `--reset` elimina sólo datos demo antes de crear los nuevos; `--reset-only` sólo limpia. Los reportes de pago se excluyen de los recordatorios automáticos.
+Los clientes demo usan emails con formato `nombre.apellido@gmail.com`, por ejemplo `lucia.gomez@gmail.com`, y contraseña `demo123`. `--reset` elimina sólo datos demo antes de crear los nuevos; `--reset-only` sólo limpia. Los reportes de pago se excluyen de los recordatorios automáticos.
 
 ---
 
