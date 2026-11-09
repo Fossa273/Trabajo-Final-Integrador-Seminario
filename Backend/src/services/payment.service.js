@@ -51,6 +51,12 @@ function formatDate(value) {
 
 function parseReportDate(value) {
     if (!value) return null;
+
+    if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+        const [year, month, day] = value.split("-").map(Number);
+        return new Date(year, month - 1, day, 0, 0, 0, 0);
+    }
+
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return null;
     date.setHours(0, 0, 0, 0);
@@ -111,8 +117,49 @@ function normalizeText(value) {
         .trim();
 }
 
+function getInstallmentNumber(concept) {
+    const match = String(concept || "").match(/cuota\s*#\s*(\d+)/i);
+    return match ? Number(match[1]) : null;
+}
+
 function isDeposit(payment) {
-    return normalizeText(payment.concept).includes("sena");
+    const concept = normalizeText(payment?.concept);
+    if (concept.includes("sena")) return true;
+
+    return (
+        getInstallmentNumber(payment?.concept) === 1 &&
+        normalizeText(payment?.notes).includes("sena")
+    );
+}
+
+function addMonths(date, months) {
+    const result = new Date(date);
+    const day = result.getDate();
+
+    result.setDate(1);
+    result.setMonth(result.getMonth() + months);
+
+    const lastDay = new Date(
+        result.getFullYear(),
+        result.getMonth() + 1,
+        0
+    ).getDate();
+
+    result.setDate(Math.min(day, lastDay));
+    result.setHours(0, 0, 0, 0);
+
+    return result;
+}
+
+function splitAmount(total, parts) {
+    const totalCents = Math.round(Number(total) * 100);
+    const base = Math.floor(totalCents / parts);
+    const remainder = totalCents - base * parts;
+
+    return Array.from({ length: parts }, (_, index) => {
+        const cents = base + (index < remainder ? 1 : 0);
+        return cents / 100;
+    });
 }
 
 function isBalance(payment) {
@@ -165,6 +212,243 @@ class PaymentService {
         }
 
         return await paymentModel.getByContract(idContract);
+    }
+
+    async getNextInstallmentNumber(idContract) {
+        const payments = await paymentModel.getByContract(idContract);
+        const hasDeposit = payments.some(isDeposit);
+        const maxNumber = payments.reduce((acc, payment) => {
+            const number = getInstallmentNumber(payment.concept);
+            return number ? Math.max(acc, number) : acc;
+        }, hasDeposit ? 1 : 0);
+
+        return maxNumber + 1;
+    }
+
+    async generateInstallments(data = {}) {
+        const idContract = Number(data.idContract);
+        const installmentsCount = Number(
+            data.installmentsCount ?? data.count ?? data.installments
+        );
+        const interest = round(Number(data.interest ?? 0));
+        const firstDueDate = parseReportDate(
+            data.firstDueDate ?? data.dueDate
+        );
+        const notes = String(data.notes ?? "").trim();
+
+        if (!idContract) {
+            throw httpError(400, "Indicá el contrato para generar las cuotas.");
+        }
+
+        if (
+            !Number.isInteger(installmentsCount) ||
+            installmentsCount < 1 ||
+            installmentsCount > 60
+        ) {
+            throw httpError(
+                400,
+                "La cantidad de cuotas debe ser un entero entre 1 y 60."
+            );
+        }
+
+        if (!Number.isFinite(interest) || interest < 0) {
+            throw httpError(
+                400,
+                "El interés debe ser un número mayor o igual a 0."
+            );
+        }
+
+        if (!firstDueDate) {
+            throw httpError(
+                400,
+                "Indicá una fecha de primer vencimiento válida."
+            );
+        }
+
+        const contract = await contractModel.getById(idContract);
+
+        if (!contract || contract.activo === false) {
+            throw httpError(404, "El contrato indicado no existe.");
+        }
+
+        const total = round(Number(contract.finalValue));
+
+        if (!Number.isFinite(total) || total <= 0) {
+            throw httpError(
+                400,
+                "El contrato no tiene un valor final válido para generar cuotas."
+            );
+        }
+
+        const payments = await paymentModel.getByContract(idContract);
+        const existingDeposit = payments.find(isDeposit) || null;
+        const depositPercentage = await settingService.getDepositPercentage();
+        const depositAmount = existingDeposit
+            ? round(Number(existingDeposit.value))
+            : round((total * depositPercentage) / 100);
+
+        const replaceablePending = payments.filter((payment) => {
+            if (payment.statusPayment !== PAYMENT_STATUS.PENDING) return false;
+            if (
+                existingDeposit &&
+                payment.idPayment === existingDeposit.idPayment
+            ) {
+                return false;
+            }
+
+            return (
+                isBalance(payment) ||
+                isAdjustment(payment) ||
+                getInstallmentNumber(payment.concept) !== null
+            );
+        });
+
+        if (replaceablePending.some(hasPendingReport)) {
+            throw httpError(
+                400,
+                "No se pueden regenerar las cuotas: hay un pago pendiente con un reporte sin revisar."
+            );
+        }
+
+        const replaceableIds = new Set(
+            replaceablePending.map((payment) => payment.idPayment)
+        );
+        const keptPayments = payments.filter(
+            (payment) =>
+                !replaceableIds.has(payment.idPayment) &&
+                (!existingDeposit ||
+                    payment.idPayment !== existingDeposit.idPayment)
+        );
+
+        const paidOtherTotal = round(
+            keptPayments
+                .filter((payment) =>
+                    PAID_STATUSES.includes(payment.statusPayment)
+                )
+                .reduce((acc, payment) => acc + Number(payment.value), 0)
+        );
+        const protectedPendingTotal = round(
+            keptPayments
+                .filter(
+                    (payment) =>
+                        payment.statusPayment === PAYMENT_STATUS.PENDING
+                )
+                .reduce((acc, payment) => acc + Number(payment.value), 0)
+        );
+
+        const remaining = round(
+            total +
+                interest -
+                depositAmount -
+                paidOtherTotal -
+                protectedPendingTotal
+        );
+
+        if (remaining <= 0) {
+            throw httpError(
+                400,
+                "El saldo a dividir es cero. Revisá el monto, la seña o los pagos existentes."
+            );
+        }
+
+        const maxKeptNumber = keptPayments.reduce((acc, payment) => {
+            const number = getInstallmentNumber(payment.concept) || 0;
+            const depositNumber = isDeposit(payment) ? 1 : 0;
+            return Math.max(acc, number, depositNumber);
+        }, 0);
+        const depositNumber =
+            existingDeposit || depositAmount > 0 ? 1 : 0;
+        const startNumber = Math.max(maxKeptNumber, depositNumber) + 1;
+
+        const amounts = splitAmount(remaining, installmentsCount);
+        const interestNote =
+            interest > 0
+                ? `Interés aplicado: ${formatCurrency(interest)}.`
+                : "";
+        const baseNotes = notes || "";
+
+        const newPayments = amounts.map((value, index) => ({
+            value,
+            statusPayment: PAYMENT_STATUS.PENDING,
+            datePayment: new Date(),
+            concept: `Cuota #${startNumber + index}`,
+            dueDate: addMonths(firstDueDate, index),
+            notes:
+                index === 0
+                    ? [interestNote, baseNotes].filter(Boolean).join(" ") ||
+                      null
+                    : baseNotes || null
+        }));
+
+        let depositUpdate = null;
+        let depositCreate = null;
+
+        if (existingDeposit) {
+            const existingNotes = String(existingDeposit.notes || "").trim();
+            const depositNotes = normalizeText(existingNotes).includes("sena")
+                ? existingNotes
+                : ["Seña", existingNotes].filter(Boolean).join(". ");
+
+            depositUpdate = {
+                idPayment: existingDeposit.idPayment,
+                data: {
+                    concept: "Cuota #1",
+                    notes: depositNotes
+                }
+            };
+        } else if (depositAmount > 0) {
+            depositCreate = {
+                value: depositAmount,
+                statusPayment: PAYMENT_STATUS.PENDING,
+                datePayment: new Date(),
+                concept: "Cuota #1",
+                dueDate: contract.reservation?.dateReservation || new Date(),
+                notes: "Seña"
+            };
+        }
+
+        const created = await paymentModel.applyInstallments({
+            idContract,
+            depositUpdate,
+            depositCreate,
+            deleteIds: replaceablePending.map(
+                (payment) => payment.idPayment
+            ),
+            newPayments
+        });
+
+        try {
+            const totalToPay = round(total + interest);
+            const clientId =
+                contract.reservation?.client?.idCli ||
+                payments[0]?.contract?.reservation?.client?.idCli;
+
+            await notificationService.notifyAdmins({
+                mensaje: `Se generaron ${installmentsCount} cuota(s) para el contrato #${idContract} por ${formatCurrency(remaining)}. Total con interés: ${formatCurrency(totalToPay)}.`,
+                tipo: "pago_pendiente",
+                idContract
+            });
+            await notificationService.notifyClient({
+                idCli: clientId,
+                mensaje: `Se generaron ${installmentsCount} cuota(s) para tu contrato #${idContract}. Total a pagar: ${formatCurrency(totalToPay)}.`,
+                tipo: "pago_pendiente",
+                idContract
+            });
+        } catch (error) {
+            console.error(
+                "[PAYMENT] No se pudieron crear las notificaciones de cuotas:",
+                error.message
+            );
+        }
+
+        return {
+            created,
+            deposit: depositUpdate || depositCreate,
+            installmentsCount,
+            interest,
+            remaining,
+            total: round(total + interest)
+        };
     }
 
     async reportPayment(id, report, usuario) {
@@ -349,11 +633,19 @@ class PaymentService {
             throw httpError(400, "Estado de pago inválido.");
         }
 
+        let concept = payment.concept;
+
+        if (!concept || normalizeText(concept) === "cuota") {
+            concept = `Cuota #${await this.getNextInstallmentNumber(
+                payment.idContract
+            )}`;
+        }
+
         const created = await paymentModel.create({
             value,
             statusPayment,
             datePayment: payment.datePayment || new Date(),
-            concept: payment.concept,
+            concept,
             dueDate: payment.dueDate,
             notes: payment.notes,
             idContract: payment.idContract
@@ -530,7 +822,101 @@ class PaymentService {
         };
     }
 
-    async syncContractPayments(idContract, finalValue) {
+    async syncInstallmentPayments(
+        idContract,
+        value,
+        previousFinalValue,
+        payments,
+        eventDate
+    ) {
+        const paidPayments = payments.filter((payment) =>
+            PAID_STATUSES.includes(payment.statusPayment)
+        );
+        const pendingPayments = payments.filter(
+            (payment) => payment.statusPayment === PAYMENT_STATUS.PENDING
+        );
+
+        const paidTotal = round(
+            paidPayments.reduce(
+                (acc, payment) => acc + Number(payment.value),
+                0
+            )
+        );
+        const currentTotal = round(
+            payments.reduce(
+                (acc, payment) => acc + Number(payment.value),
+                0
+            )
+        );
+        const previousValue =
+            previousFinalValue === null || previousFinalValue === undefined
+                ? NaN
+                : Number(previousFinalValue);
+        const difference = Number.isFinite(previousValue)
+            ? round(currentTotal - previousValue)
+            : 0;
+        const targetTotal = round(value + difference);
+
+        if (Math.abs(currentTotal - targetTotal) < 0.01) return;
+
+        const desiredPendingTotal = round(targetTotal - paidTotal);
+        const currentPendingTotal = round(
+            pendingPayments.reduce(
+                (acc, payment) => acc + Number(payment.value),
+                0
+            )
+        );
+
+        let remainingDelta = round(
+            desiredPendingTotal - currentPendingTotal
+        );
+
+        if (remainingDelta === 0) return;
+
+        const adjustable = pendingPayments
+            .filter((payment) => !hasPendingReport(payment))
+            .sort(
+                (a, b) =>
+                    (getInstallmentNumber(b.concept) || 0) -
+                    (getInstallmentNumber(a.concept) || 0)
+            );
+
+        for (const payment of adjustable) {
+            if (remainingDelta === 0) break;
+
+            const currentValue = Number(payment.value);
+            const nextValue = round(currentValue + remainingDelta);
+
+            if (nextValue > 0) {
+                await paymentModel.update(payment.idPayment, {
+                    value: nextValue
+                });
+                remainingDelta = 0;
+            } else {
+                await paymentModel.delete(payment.idPayment);
+                remainingDelta = round(remainingDelta + currentValue);
+            }
+        }
+
+        if (remainingDelta > 0) {
+            const maxNumber = payments.reduce((acc, payment) => {
+                const number = getInstallmentNumber(payment.concept) || 0;
+                const depositNumber = isDeposit(payment) ? 1 : 0;
+                return Math.max(acc, number, depositNumber);
+            }, 0);
+
+            await paymentModel.create({
+                value: remainingDelta,
+                statusPayment: PAYMENT_STATUS.PENDING,
+                datePayment: new Date(),
+                concept: `Cuota #${maxNumber + 1}`,
+                dueDate: eventDate,
+                idContract
+            });
+        }
+    }
+
+    async syncContractPayments(idContract, finalValue, previousFinalValue = null) {
         const value = round(finalValue);
 
         if (!Number.isFinite(value) || value < 0) return;
@@ -539,6 +925,22 @@ class PaymentService {
         const eventDate = contract?.reservation?.dateEvent || null;
 
         const payments = await paymentModel.getByContract(idContract);
+
+        if (
+            payments.some(
+                (payment) => getInstallmentNumber(payment.concept) !== null
+            )
+        ) {
+            await this.syncInstallmentPayments(
+                idContract,
+                value,
+                previousFinalValue,
+                payments,
+                eventDate
+            );
+            return;
+        }
+
         const paidPayments = payments.filter((p) =>
             PAID_STATUSES.includes(p.statusPayment)
         );

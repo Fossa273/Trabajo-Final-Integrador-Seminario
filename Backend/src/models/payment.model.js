@@ -39,6 +39,18 @@ function toDate(value) {
     return Number.isNaN(date.getTime()) ? null : date;
 }
 
+function buildPaymentData(payment, idContract) {
+    return {
+        value: Number(payment.value),
+        statusPayment: payment.statusPayment,
+        datePayment: toDate(payment.datePayment) || new Date(),
+        concept: payment.concept || "Cuota",
+        dueDate: toDate(payment.dueDate),
+        notes: payment.notes || null,
+        idContract: Number(idContract)
+    };
+}
+
 class PaymentModel {
 
     async getAll() {
@@ -89,6 +101,51 @@ class PaymentModel {
                 idContract: Number(idContract)
             },
             include: PAYMENT_INCLUDE
+        });
+    }
+
+    async applyInstallments({
+        idContract,
+        depositUpdate,
+        depositCreate,
+        deleteIds = [],
+        newPayments = []
+    }) {
+        return await prisma.$transaction(async (tx) => {
+            if (depositUpdate) {
+                await tx.payment.update({
+                    where: { idPayment: Number(depositUpdate.idPayment) },
+                    data: depositUpdate.data
+                });
+            }
+
+            if (depositCreate) {
+                await tx.payment.create({
+                    data: buildPaymentData(depositCreate, idContract)
+                });
+            }
+
+            if (deleteIds.length > 0) {
+                await tx.payment.updateMany({
+                    where: {
+                        idPayment: {
+                            in: deleteIds.map((id) => Number(id))
+                        }
+                    },
+                    data: { activo: false }
+                });
+            }
+
+            const created = [];
+
+            for (const payment of newPayments) {
+                const row = await tx.payment.create({
+                    data: buildPaymentData(payment, idContract)
+                });
+                created.push(row);
+            }
+
+            return created;
         });
     }
 

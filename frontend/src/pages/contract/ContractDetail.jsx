@@ -433,13 +433,27 @@ function ContractDetail() {
             const refreshed = await contractService.getById(id);
             setContract(refreshed);
 
-            showMessage(
-                "success",
-                "Pago actualizado",
-                statusPayment === "pagado"
-                    ? "El pago fue marcado como abonado."
-                    : "El pago volvió a estado pendiente."
-            );
+            const concept = payment.concept || "Cuota";
+
+            if (statusPayment === "pagado") {
+                showMessage(
+                    "success",
+                    "Pago confirmado",
+                    `La cuota "${concept}" fue marcada como pagada.`
+                );
+            } else if (statusPayment === "seña") {
+                showMessage(
+                    "success",
+                    "Seña registrada",
+                    `La cuota "${concept}" quedó registrada como seña abonada.`
+                );
+            } else {
+                showMessage(
+                    "success",
+                    "Pago reabierto",
+                    `La cuota "${concept}" volvió a estado pendiente.`
+                );
+            }
         } catch (error) {
             showMessage("error", "Error", error.message);
         } finally {
@@ -461,7 +475,7 @@ function ContractDetail() {
             showMessage(
                 "success",
                 "Recordatorio enviado",
-                "Se notificó al cliente por la campana y por correo (si el SMTP está configurado)."
+                "Se notificó al cliente por la campana y por correo."
             );
         } catch (error) {
             showMessage("error", "Error", error.message);

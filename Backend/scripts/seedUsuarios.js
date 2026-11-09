@@ -6,6 +6,11 @@ const ADMINS = [
         username: "admin",
         password: "admin123",
         rol: "administrador"
+    },
+    {
+        username: "demo.admin",
+        password: "demo123",
+        rol: "administrador"
     }
 ];
 

@@ -1,63 +1,71 @@
 import prisma from "../src/lib/prisma.js";
 
-const PRICES = [
-    { nameLoungeType: "Reina", value: 1200000 },
-    { nameLoungeType: "Princesa", value: 1500000 },
-    { nameLoungeType: "Grande", value: 1300000 },
-    { nameLoungeType: "Chico", value: 900000 }
-];
+const PRICE_BY_TYPE = {
+    Reina: 1200000,
+    Princesa: 1500000,
+    Grande: 1300000,
+    Chico: 900000,
+    Imperial: 2100000,
+    Ejecutivo: 1600000,
+    "Clásico": 1400000,
+    Premium: 2000000,
+    "Íntimo": 1000000,
+    Reserva: 1250000
+};
 
-const EFFECTIVE_DATE = "2026-01-01";
+const DEFAULT_PRICE = 1200000;
+
+const EFFECTIVE_DATES = [
+    { date: "2026-01-01", endDate: "2026-06-30", factor: 1 },
+    { date: "2026-07-01", endDate: null, factor: 1.1 }
+];
 
 async function seed() {
     const loungeTypes = await prisma.loungeType.findMany({
-        select: { idLoungeType: true, nameLoungeType: true, idLounge: true }
+        where: { activo: true, lounge: { activo: true } },
+        select: { idLoungeType: true, nameLoungeType: true }
     });
 
     let inserted = 0;
-    const skipped = [];
+    let skipped = 0;
 
-    for (const price of PRICES) {
-        const loungeType = loungeTypes.find(
-            (lt) => lt.nameLoungeType === price.nameLoungeType
-        );
+    for (const loungeType of loungeTypes) {
+        const baseValue =
+            PRICE_BY_TYPE[loungeType.nameLoungeType] ?? DEFAULT_PRICE;
 
-        if (!loungeType) {
-            skipped.push(`Tipo de salón "${price.nameLoungeType}" inexistente`);
-            continue;
-        }
+        for (const item of EFFECTIVE_DATES) {
+            const effectiveDate = new Date(`${item.date}T00:00:00.000Z`);
+            const existing = await prisma.price.findUnique({
+                where: {
+                    effectiveDate_idLoungeType: {
+                        effectiveDate,
+                        idLoungeType: loungeType.idLoungeType
+                    }
+                }
+            });
 
-        const existing = await prisma.price.findUnique({
-            where: {
-                effectiveDate_idLoungeType: {
-                    effectiveDate: new Date(EFFECTIVE_DATE),
+            if (existing) {
+                skipped++;
+                continue;
+            }
+
+            await prisma.price.create({
+                data: {
+                    effectiveDate,
+                    endDate: item.endDate
+                        ? new Date(`${item.endDate}T00:00:00.000Z`)
+                        : null,
+                    value: Math.round(baseValue * item.factor),
                     idLoungeType: loungeType.idLoungeType
                 }
-            }
-        });
-
-        if (existing) {
-            skipped.push(`Precio del tipo de salón "${price.nameLoungeType}" ya existe`);
-            continue;
+            });
+            inserted++;
         }
-
-        await prisma.price.create({
-            data: {
-                effectiveDate: new Date(EFFECTIVE_DATE),
-                endDate: null,
-                value: price.value,
-                idLoungeType: loungeType.idLoungeType
-            }
-        });
-        inserted++;
     }
 
     console.log(
-        `Seed de precios finalizado: ${inserted} insertados, ${skipped.length} omitidos.`
+        `Seed de precios finalizado: ${inserted} insertados, ${skipped} omitidos en ${loungeTypes.length} tipos de salón.`
     );
-    if (skipped.length > 0) {
-        skipped.forEach((reason) => console.log(`  - ${reason}`));
-    }
 
     await prisma.$disconnect();
     process.exit(0);

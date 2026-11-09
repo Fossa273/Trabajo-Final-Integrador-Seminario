@@ -25,6 +25,40 @@ const LOUNGES = [
             { nameLoungeType: "Grande", minQuantity: 90, maxQuantity: 130 },
             { nameLoungeType: "Chico", minQuantity: 70, maxQuantity: 90 }
         ]
+    },
+    {
+        name: "Stylo Palermo",
+        loungeAddress: "Av. Santa Fe 3253",
+        city: "Buenos Aires",
+        types: [
+            { nameLoungeType: "Imperial", minQuantity: 120, maxQuantity: 200 },
+            { nameLoungeType: "Ejecutivo", minQuantity: 60, maxQuantity: 120 }
+        ]
+    },
+    {
+        name: "Stylo La Plata",
+        loungeAddress: "Calle 50 1234",
+        city: "La Plata",
+        types: [
+            { nameLoungeType: "Clásico", minQuantity: 80, maxQuantity: 140 }
+        ]
+    },
+    {
+        name: "Stylo Córdoba",
+        loungeAddress: "Av. Colón 567",
+        city: "Córdoba",
+        types: [
+            { nameLoungeType: "Premium", minQuantity: 100, maxQuantity: 180 },
+            { nameLoungeType: "Íntimo", minQuantity: 40, maxQuantity: 80 }
+        ]
+    },
+    {
+        name: "Stylo Mendoza",
+        loungeAddress: "San Martín 890",
+        city: "Mendoza",
+        types: [
+            { nameLoungeType: "Reserva", minQuantity: 50, maxQuantity: 100 }
+        ]
     }
 ];
 

@@ -198,7 +198,11 @@ class ContractService {
         });
 
         if (updatedData) {
-            await paymentService.syncContractPayments(id, calc.total);
+            await paymentService.syncContractPayments(
+                id,
+                calc.total,
+                contract.finalValue
+            );
         }
 
         const updatedContract = await contractModel.getById(id);
@@ -582,7 +586,11 @@ class ContractService {
         });
 
         if (updatedData) {
-            await paymentService.syncContractPayments(id, calc.total);
+            await paymentService.syncContractPayments(
+                id,
+                calc.total,
+                contract.finalValue
+            );
         }
 
         const aprobado = await contractModel.updateModification(id, {

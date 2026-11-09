@@ -17,6 +17,7 @@ router.get("/email-templates", authenticate, requireRole(["administrador"]), pay
 router.put("/email-templates", authenticate, requireRole(["administrador"]), paymentController.updateEmailTemplates);
 router.post("/email-templates/reset", authenticate, requireRole(["administrador"]), paymentController.resetEmailTemplates);
 router.get("/contract/:idContract", authenticate, requireRole(["administrador"]), paymentController.getByContract);
+router.post("/installments", authenticate, requireRole(["administrador"]), paymentController.generateInstallments);
 router.post("/", authenticate, requireRole(["administrador"]), paymentController.create);
 router.post("/:id/reminder", authenticate, requireRole(["administrador"]), paymentController.sendReminder);
 router.post("/:id/report", authenticate, uploadPaymentProof, paymentController.report);

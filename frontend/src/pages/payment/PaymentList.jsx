@@ -17,6 +17,13 @@ const STATUS_LABEL = {
 
 const PAID_STATUSES = ["seña", "pagado"];
 
+const normalizeConcept = (value) =>
+    String(value || "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+        .trim();
+
 const REPORT_STATUS_LABEL = {
     pendiente: "Reportado",
     confirmado: "Confirmado",
@@ -94,14 +101,47 @@ const IconMail = () => (
 );
 
 const emptyCreateForm = () => ({
+    mode: "unico",
     idContract: "",
     concept: "Cuota",
     value: "",
     dueDate: "",
     statusPayment: "pendiente",
     datePayment: new Date().toISOString().split("T")[0],
-    notes: ""
+    notes: "",
+    installmentsCount: 3,
+    interest: 0,
+    firstDueDate: new Date().toISOString().split("T")[0]
 });
+
+const getStatusChangeFeedback = (previousStatus, nextStatus, concept) => {
+    if (!nextStatus || previousStatus === nextStatus) return null;
+
+    const subject = concept ? `El pago "${concept}"` : "El pago";
+
+    if (nextStatus === "pendiente") {
+        return {
+            title: "Pago reabierto",
+            message: `${subject} volvió a estado pendiente.`
+        };
+    }
+
+    if (nextStatus === "seña") {
+        return {
+            title: "Seña registrada",
+            message: `${subject} quedó registrado como seña abonada.`
+        };
+    }
+
+    if (nextStatus === "pagado") {
+        return {
+            title: "Pago confirmado",
+            message: `${subject} quedó registrado como pagado.`
+        };
+    }
+
+    return null;
+};
 
 function PaymentList() {
     const navigate = useNavigate();
@@ -227,13 +267,91 @@ function PaymentList() {
         .filter((p) => p.statusPayment === "pendiente")
         .reduce((acc, p) => acc + Number(p.value || 0), 0);
 
+    const pendingByContract = payments.reduce((acc, payment) => {
+        if (payment.statusPayment !== "pendiente") return acc;
+        const idContract = Number(payment.idContract);
+        acc[idContract] = (acc[idContract] || 0) + 1;
+        return acc;
+    }, {});
+
     const paidAmount = payments
         .filter((p) => PAID_STATUSES.includes(p.statusPayment))
         .reduce((acc, p) => acc + Number(p.value || 0), 0);
 
+    const isInstallmentMode = createForm.mode === "cuotas";
+    const selectedContract = contracts.find(
+        (contract) =>
+            String(contract.idContract) === String(createForm.idContract)
+    );
+    const selectedFinalValue = Number(selectedContract?.finalValue) || 0;
+    const depositPercentage = Number(settings?.depositPercentage ?? 30);
+    const selectedPayments = selectedContract
+        ? payments.filter(
+              (payment) =>
+                  Number(payment.idContract) ===
+                  Number(selectedContract.idContract)
+          )
+        : [];
+    const existingDeposit = selectedPayments.find((payment) => {
+        const concept = String(payment.concept || "").toLowerCase();
+        const match = concept.match(/cuota\s*#\s*(\d+)/i);
+        return (
+            concept.includes("seña") ||
+            concept.includes("sena") ||
+            (match && Number(match[1]) === 1)
+        );
+    });
+    const estimatedDeposit = existingDeposit
+        ? Number(existingDeposit.value)
+        : (selectedFinalValue * depositPercentage) / 100;
+    const paidOtherTotal = selectedPayments
+        .filter(
+            (payment) =>
+                PAID_STATUSES.includes(payment.statusPayment) &&
+                payment.idPayment !== existingDeposit?.idPayment
+        )
+        .reduce((acc, payment) => acc + Number(payment.value || 0), 0);
+    const protectedPendingTotal = selectedPayments
+        .filter((payment) => {
+            if (payment.statusPayment !== "pendiente") return false;
+            if (payment.idPayment === existingDeposit?.idPayment) return false;
+
+            const concept = normalizeConcept(payment.concept);
+            return (
+                !concept.includes("saldo") &&
+                !concept.includes("ajuste") &&
+                !/cuota\s*#\s*\d+/.test(concept)
+            );
+        })
+        .reduce((acc, payment) => acc + Number(payment.value || 0), 0);
+    const installmentInterest = Number(createForm.interest) || 0;
+    const installmentTotal = selectedFinalValue + installmentInterest;
+    const installmentRemaining = Math.max(
+        0,
+        installmentTotal -
+            estimatedDeposit -
+            paidOtherTotal -
+            protectedPendingTotal
+    );
+    const installmentCountValue = Number(createForm.installmentsCount) || 0;
+    const installmentValue =
+        installmentCountValue > 0
+            ? installmentRemaining / installmentCountValue
+            : 0;
+
     const handleCreateChange = (event) => {
         const { name, value } = event.target;
         setCreateForm((prev) => ({ ...prev, [name]: value }));
+    };
+
+    const handleCreateKeyDown = (event) => {
+        if (event.key !== "Enter") return;
+        if (["TEXTAREA", "BUTTON"].includes(event.target.tagName)) return;
+        event.preventDefault();
+    };
+
+    const handleModeChange = (mode) => {
+        setCreateForm((prev) => ({ ...prev, mode }));
     };
 
     const handleCreate = async (event) => {
@@ -241,19 +359,38 @@ function PaymentList() {
         setSaving(true);
 
         try {
-            await paymentService.create({
-                idContract: Number(createForm.idContract),
-                concept: createForm.concept.trim() || "Cuota",
-                value: Number(createForm.value),
-                dueDate: createForm.dueDate || null,
-                statusPayment: createForm.statusPayment,
-                datePayment: createForm.datePayment || undefined,
-                notes: createForm.notes || null
-            });
+            if (isInstallmentMode) {
+                await paymentService.generateInstallments({
+                    idContract: Number(createForm.idContract),
+                    installmentsCount: Number(createForm.installmentsCount),
+                    interest: Number(createForm.interest || 0),
+                    firstDueDate: createForm.firstDueDate,
+                    notes: createForm.notes || null
+                });
+                showFeedback(
+                    "success",
+                    "Cuotas generadas",
+                    "Las cuotas se generaron correctamente."
+                );
+            } else {
+                await paymentService.create({
+                    idContract: Number(createForm.idContract),
+                    concept: createForm.concept.trim() || "Cuota",
+                    value: Number(createForm.value),
+                    dueDate: createForm.dueDate || null,
+                    statusPayment: createForm.statusPayment,
+                    datePayment: createForm.datePayment || undefined,
+                    notes: createForm.notes || null
+                });
+                showFeedback(
+                    "success",
+                    "Pago creado",
+                    "El pago se registró correctamente."
+                );
+            }
 
             setCreating(false);
             setCreateForm(emptyCreateForm());
-            showFeedback("success", "Pago creado", "El pago se registró correctamente.");
             await loadData();
         } catch (error) {
             showFeedback("error", "Error", error.message);
@@ -272,6 +409,15 @@ function PaymentList() {
         setSaving(true);
 
         try {
+            const original = payments.find(
+                (payment) => payment.idPayment === editing.idPayment
+            );
+            const statusFeedback = getStatusChangeFeedback(
+                original?.statusPayment,
+                editing.statusPayment,
+                editing.concept
+            );
+
             await paymentService.update(editing.idPayment, {
                 concept: editing.concept,
                 value: Number(editing.value),
@@ -281,7 +427,13 @@ function PaymentList() {
             });
 
             setEditing(null);
-            showFeedback("success", "Pago actualizado", "Los cambios se guardaron correctamente.");
+
+            if (statusFeedback) {
+                showFeedback("success", statusFeedback.title, statusFeedback.message);
+            } else {
+                showFeedback("success", "Pago actualizado", "Los cambios se guardaron correctamente.");
+            }
+
             await loadData();
         } catch (error) {
             showFeedback("error", "Error", error.message);
@@ -314,7 +466,7 @@ function PaymentList() {
             showFeedback(
                 "success",
                 "Recordatorio enviado",
-                "Se notificó al cliente por la campana y por correo (si el SMTP está configurado)."
+                "Se notificó al cliente por la campana y por correo."
             );
             await loadData();
         } catch (error) {
@@ -335,13 +487,25 @@ function PaymentList() {
         setReportSaving(true);
 
         try {
-            await paymentService.confirmReport(reportDetail.idPayment);
-            setReportDetail(null);
-            showFeedback(
-                "success",
-                "Pago confirmado",
-                "El pago se marcó como abonado y se notificó al cliente."
+            const result = await paymentService.confirmReport(reportDetail.idPayment);
+            const statusFeedback = getStatusChangeFeedback(
+                reportDetail.statusPayment,
+                result?.payment?.statusPayment,
+                reportDetail.concept
             );
+
+            setReportDetail(null);
+
+            if (statusFeedback) {
+                showFeedback("success", statusFeedback.title, statusFeedback.message);
+            } else {
+                showFeedback(
+                    "success",
+                    "Pago confirmado",
+                    "El pago se marcó como abonado y se notificó al cliente."
+                );
+            }
+
             await loadData();
         } catch (error) {
             showFeedback("error", "Error", error.message);
@@ -751,15 +915,36 @@ function PaymentList() {
 
             {creating && (
                 <div className="modal-backdrop">
-                    <div className="modal-card-form">
+                    <div className={`modal-card-form ${isInstallmentMode ? "payment-installments-modal" : ""}`}>
                         <div className="modal-header-styled">
                             <h2>Nuevo pago</h2>
-                            <button className="btn-close" onClick={() => setCreating(false)}>✕</button>
+                            <button type="button" className="btn-close" onClick={() => setCreating(false)}>✕</button>
                         </div>
 
-                        <form onSubmit={handleCreate} className="modal-edit-form">
+                        <form
+                            onSubmit={handleCreate}
+                            onKeyDown={handleCreateKeyDown}
+                            className="modal-edit-form"
+                        >
+                            <div className="payment-mode-toggle">
+                                <button
+                                    type="button"
+                                    className={!isInstallmentMode ? "active" : ""}
+                                    onClick={() => handleModeChange("unico")}
+                                >
+                                    Pago único
+                                </button>
+                                <button
+                                    type="button"
+                                    className={isInstallmentMode ? "active" : ""}
+                                    onClick={() => handleModeChange("cuotas")}
+                                >
+                                    Plan de cuotas
+                                </button>
+                            </div>
+
                             <div className="form-grid-2">
-                                <div className="form-group">
+                                <div className="form-group full-width">
                                     <label>Contrato</label>
                                     <select
                                         name="idContract"
@@ -768,71 +953,125 @@ function PaymentList() {
                                         required
                                     >
                                         <option value="">Seleccioná un contrato...</option>
-                                        {contracts.map((contract) => (
-                                            <option key={contract.idContract} value={contract.idContract}>
-                                                #{contract.idContract} — {contract.reservation?.client?.nameCli} {contract.reservation?.client?.surnameCli} — {currency(contract.finalValue)}
-                                            </option>
-                                        ))}
+                                        {contracts.map((contract) => {
+                                            const pendingCount =
+                                                pendingByContract[contract.idContract] || 0;
+                                            const pendingLabel =
+                                                pendingCount > 0
+                                                    ? `(${pendingCount} pago${pendingCount === 1 ? "" : "s"} pendiente${pendingCount === 1 ? "" : "s"})`
+                                                    : "(sin pagos pendientes)";
+
+                                            return (
+                                                <option key={contract.idContract} value={contract.idContract}>
+                                                    #{contract.idContract} — {contract.reservation?.client?.nameCli} {contract.reservation?.client?.surnameCli} — {currency(contract.finalValue)} {pendingLabel}
+                                                </option>
+                                            );
+                                        })}
                                     </select>
                                 </div>
 
-                                <div className="form-group">
-                                    <label>Concepto</label>
-                                    <input
-                                        type="text"
-                                        name="concept"
-                                        value={createForm.concept}
-                                        onChange={handleCreateChange}
-                                        placeholder="Seña, Saldo, Cuota..."
-                                        required
-                                    />
-                                </div>
+                                {isInstallmentMode ? (
+                                    <>
+                                        <div className="form-group">
+                                            <label>Cantidad de cuotas del saldo</label>
+                                            <input
+                                                type="number"
+                                                name="installmentsCount"
+                                                value={createForm.installmentsCount}
+                                                onChange={handleCreateChange}
+                                                min="1"
+                                                max="60"
+                                                step="1"
+                                                required
+                                            />
+                                            <small>La seña se registra aparte como Cuota #1.</small>
+                                        </div>
 
-                                <div className="form-group">
-                                    <label>Monto</label>
-                                    <input
-                                        type="number"
-                                        name="value"
-                                        value={createForm.value}
-                                        onChange={handleCreateChange}
-                                        min="0.01"
-                                        step="0.01"
-                                        required
-                                    />
-                                </div>
+                                        <div className="form-group">
+                                            <label>Interés fijo ($)</label>
+                                            <input
+                                                type="number"
+                                                name="interest"
+                                                value={createForm.interest}
+                                                onChange={handleCreateChange}
+                                                min="0"
+                                                step="0.01"
+                                            />
+                                        </div>
 
-                                <div className="form-group">
-                                    <label>Vencimiento</label>
-                                    <input
-                                        type="date"
-                                        name="dueDate"
-                                        value={createForm.dueDate}
-                                        onChange={handleCreateChange}
-                                    />
-                                </div>
+                                        <div className="form-group">
+                                            <label>Primer vencimiento</label>
+                                            <input
+                                                type="date"
+                                                name="firstDueDate"
+                                                value={createForm.firstDueDate}
+                                                onChange={handleCreateChange}
+                                                required
+                                            />
+                                            <small>Las cuotas siguientes vencen mes a mes.</small>
+                                        </div>
+                                    </>
+                                ) : (
+                                    <>
+                                        <div className="form-group">
+                                            <label>Concepto</label>
+                                            <input
+                                                type="text"
+                                                name="concept"
+                                                value={createForm.concept}
+                                                onChange={handleCreateChange}
+                                                placeholder="Seña, Saldo, Cuota..."
+                                                required
+                                            />
+                                        </div>
 
-                                <div className="form-group">
-                                    <label>Estado</label>
-                                    <select
-                                        name="statusPayment"
-                                        value={createForm.statusPayment}
-                                        onChange={handleCreateChange}
-                                    >
-                                        <option value="pendiente">Pendiente</option>
-                                        <option value="seña">Seña abonada</option>
-                                        <option value="pagado">Pagado</option>
-                                    </select>
-                                </div>
+                                        <div className="form-group">
+                                            <label>Monto</label>
+                                            <input
+                                                type="number"
+                                                name="value"
+                                                value={createForm.value}
+                                                onChange={handleCreateChange}
+                                                min="0.01"
+                                                step="0.01"
+                                                required
+                                            />
+                                        </div>
 
-                                <div className="form-group">
-                                    <label>Fecha de pago</label>
-                                    <input
-                                        type="date"
-                                        name="datePayment"
-                                        value={createForm.datePayment}
-                                        onChange={handleCreateChange}
-                                    />
-                                </div>
+                                        <div className="form-group">
+                                            <label>Vencimiento</label>
+                                            <input
+                                                type="date"
+                                                name="dueDate"
+                                                value={createForm.dueDate}
+                                                onChange={handleCreateChange}
+                                            />
+                                        </div>
+
+                                        <div className="form-group">
+                                            <label>Estado</label>
+                                            <select
+                                                name="statusPayment"
+                                                value={createForm.statusPayment}
+                                                onChange={handleCreateChange}
+                                            >
+                                                <option value="pendiente">Pendiente</option>
+                                                <option value="seña">Seña abonada</option>
+                                                <option value="pagado">Pagado</option>
+                                            </select>
+                                        </div>
+
+                                        <div className="form-group">
+                                            <label>Fecha de pago</label>
+                                            <input
+                                                type="date"
+                                                name="datePayment"
+                                                value={createForm.datePayment}
+                                                onChange={handleCreateChange}
+                                            />
+                                        </div>
+                                    </>
+                                )}
 
                                 <div className="form-group full-width">
                                     <label>Notas</label>
@@ -845,6 +1084,35 @@ function PaymentList() {
                                 </div>
                             </div>
 
+                            {isInstallmentMode && selectedContract && (
+                                <div className="payment-installment-summary">
+                                    <div>
+                                        <span>Valor final</span>
+                                        <strong>{currency(selectedFinalValue)}</strong>
+                                    </div>
+                                    <div>
+                                        <span>Seña</span>
+                                        <strong>{currency(estimatedDeposit)}</strong>
+                                    </div>
+                                    <div>
+                                        <span>Interés</span>
+                                        <strong>{currency(installmentInterest)}</strong>
+                                    </div>
+                                    <div>
+                                        <span>Total con interés</span>
+                                        <strong>{currency(installmentTotal)}</strong>
+                                    </div>
+                                    <div>
+                                        <span>Saldo a dividir</span>
+                                        <strong>{currency(installmentRemaining)}</strong>
+                                    </div>
+                                    <div>
+                                        <span>Valor aprox. por cuota</span>
+                                        <strong>{currency(installmentValue)}</strong>
+                                    </div>
+                                </div>
+                            )}
+
                             <div className="modal-footer-right">
                                 <button
                                     type="button"
@@ -854,7 +1122,13 @@ function PaymentList() {
                                     Cancelar
                                 </button>
                                 <button type="submit" className="btn-submit-cyan" disabled={saving}>
-                                    {saving ? "Guardando..." : "Crear pago"}
+                                    {saving
+                                        ? isInstallmentMode
+                                            ? "Generando..."
+                                            : "Guardando..."
+                                        : isInstallmentMode
+                                            ? "Generar cuotas"
+                                            : "Crear pago"}
                                 </button>
                             </div>
                         </form>

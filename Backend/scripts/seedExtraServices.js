@@ -30,6 +30,36 @@ const EXTRA_SERVICES = [
         nameService: "Pantalla y proyector",
         detailService: "Pantalla y proyector para presentaciones o videos",
         cost: 30000.0
+    },
+    {
+        nameService: "Barra de tragos",
+        detailService: "Bartender profesional y barra móvil con cócteles clásicos",
+        cost: 75000.0
+    },
+    {
+        nameService: "Torta de celebración",
+        detailService: "Torta artesanal decorada según la temática del evento",
+        cost: 55000.0
+    },
+    {
+        nameService: "Cabina de fotos",
+        detailService: "Cabina fotográfica con impresión ilimitada y accesorios",
+        cost: 48000.0
+    },
+    {
+        nameService: "Animación infantil",
+        detailService: "Coordinadores recreativos y juegos para los más chicos",
+        cost: 42000.0
+    },
+    {
+        nameService: "Valet parking",
+        detailService: "Servicio de estacionamiento con personal capacitado",
+        cost: 38000.0
+    },
+    {
+        nameService: "Pista de luces LED",
+        detailService: "Iluminación LED programable para pista de baile",
+        cost: 52000.0
     }
 ];
 

@@ -76,7 +76,17 @@ const locations = [
     { city: "Zapala", zipCode: "8340" },
     { city: "San Martín de los Andes", zipCode: "8370" },
     { city: "San Carlos de Bariloche", zipCode: "8400" },
-    { city: "Caleta Olivia", zipCode: "9011" }
+    { city: "Caleta Olivia", zipCode: "9011" },
+    { city: "General Roca", zipCode: "8332" },
+    { city: "Villa Mercedes", zipCode: "5730" },
+    { city: "Río Tercero", zipCode: "5850" },
+    { city: "San Pedro", zipCode: "2930" },
+    { city: "Necochea", zipCode: "7630" },
+    { city: "Tres Arroyos", zipCode: "7500" },
+    { city: "Pigüé", zipCode: "8170" },
+    { city: "Santa Teresita", zipCode: "7107" },
+    { city: "Pinamar", zipCode: "7167" },
+    { city: "Villa Gesell", zipCode: "7165" }
 ];
 
 const normalize = (value) =>

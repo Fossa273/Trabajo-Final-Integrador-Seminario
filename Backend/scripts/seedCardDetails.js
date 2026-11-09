@@ -21,12 +21,39 @@ const CARD_DETAILS = [
     },
     {
         menuStage: "Stylo Fest",
-        detail: "Pensado especialmente para Fiestas de 15 o celebraciones jóvenes.",
+        detail: "Pensado especialmente para Fiestas de 15 o celebraciones j��venes.",
         budget: 95000.0,
         imageUrl: "/uploads/1789046976782-978557305.jpeg",
-        starter: "Cazuelitas de rabas crocantes con rodajas de limón y emulsión de alioli suave.",
-        mainCourse: "Milanesa napolitana individual de ternera acompañada de una torre de papas fritas rústicas doradas al horno.",
-        dessert: "Bombón suizo bañado en chocolate semiamargo con corazón de dulce de leche granizado y lluvia de nueces."
+        starter: "Cazuelitas de rabas crocantes con rodajas de lim��n y emulsi��n de alioli suave.",
+        mainCourse: "Milanesa napolitana individual de ternera acompa��ada de una torre de papas fritas rǧsticas doradas al horno.",
+        dessert: "Bomb��n suizo ba��ado en chocolate semiamargo con coraz��n de dulce de leche granizado y lluvia de nueces."
+    },
+    {
+        menuStage: "Stylo Infantil",
+        detail: "Menǧ pensado para cumplea��os infantiles y eventos familiares.",
+        budget: 70000.0,
+        imageUrl: "/uploads/1789046931098-542569346.jpeg",
+        starter: "Bastones de muzzarella con salsa de tomate casera y mini empanaditas de jam��n y queso.",
+        mainCourse: "Hamburguesas caseras con pan artesanal, papas fritas y aderezos a elecci��n.",
+        dessert: "Copa de helado con toppings de chocolate, dulce de leche y galletitas trituradas."
+    },
+    {
+        menuStage: "Stylo Vegetariano",
+        detail: "Propuesta completa sin carnes, ideal para invitados con dietas especiales.",
+        budget: 105000.0,
+        imageUrl: "/uploads/1789046958325-822461417.jpeg",
+        starter: "Tartar de palta y tomate con crocantes de quinoa y vinagreta de lim��n.",
+        mainCourse: "Lasagna de calabaza, espinaca y ricota con salsa de tomates asados y albahaca fresca.",
+        dessert: "Cheesecake de frutos rojos con base de galletitas y crema de casta��as."
+    },
+    {
+        menuStage: "Stylo Gourmet",
+        detail: "Experiencia de autor con productos premium y presentaci��n de alta cocina.",
+        budget: 160000.0,
+        imageUrl: "/uploads/1789046976782-978557305.jpeg",
+        starter: "Carpaccio de ternera con rǧcula, parmesano y alioli de trufa.",
+        mainCourse: "Ojo de bife madurado con papas confitadas, cebollas caramelizadas y salsa de vino malbec.",
+        dessert: "Esfera de chocolate rellena de mousse de frambuesa con helado de vainilla bourbon."
     }
 ];
 

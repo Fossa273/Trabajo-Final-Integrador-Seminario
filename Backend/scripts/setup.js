@@ -32,7 +32,8 @@ const SEEDS = [
     "seedUsuarios.js",
     "seedPrices.js",
     "seedSettings.js",
-    "seedEmailTemplates.js"
+    "seedEmailTemplates.js",
+    "seedDemoData.js"
 ];
 
 const run = (cmd, args) => {

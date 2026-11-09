@@ -5,6 +5,7 @@ export const paymentService = {
     getById: (id) => api.get(`/api/payment/${id}`),
     getByContract: (idContract) => api.get(`/api/payment/contract/${idContract}`),
     create: (data) => api.post("/api/payment", data),
+    generateInstallments: (data) => api.post("/api/payment/installments", data),
     update: (id, data) => api.put(`/api/payment/${id}`, data),
     remove: (id) => api.del(`/api/payment/${id}`),
     sendReminder: (id) => api.post(`/api/payment/${id}/reminder`),

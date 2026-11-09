@@ -25,6 +25,15 @@ class PaymentController {
         return res.status(201).json(newPayment);
     });
 
+    generateInstallments = asyncHandler(async (req, res) => {
+        const result = await paymentService.generateInstallments(req.body);
+
+        return res.status(201).json({
+            message: "Cuotas generadas correctamente.",
+            ...result
+        });
+    });
+
     update = asyncHandler(async (req, res) => {
         const paymentUpdated = await paymentService.update(
             req.params.id,
