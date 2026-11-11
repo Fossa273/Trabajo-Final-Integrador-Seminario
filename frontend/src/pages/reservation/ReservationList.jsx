@@ -44,6 +44,7 @@ function ReservationList() {
     const [clientToDetail, setClientToDetail] = useState(null);
     const [feedback, setFeedback] = useState(null);
     const [reservationToCancelId, setReservationToCancelId] = useState(null);
+    const [reservationToAcceptId, setReservationToAcceptId] = useState(null);
     const [cancelOpen, setCancelOpen] = useState(false);
     const [cancelMotivo, setCancelMotivo] = useState("");
     const [loading, setLoading] = useState(true);
@@ -85,11 +86,17 @@ function ReservationList() {
 
     const acceptReservation = async (id) => {
 
+        setReservationToAcceptId(null);
+
         try {
 
             await reservationService.updateStatus(id, { status: "aceptada" });
 
-            showFeedback("success", "Reserva aceptada", "Reserva aceptada correctamente.");
+            showFeedback(
+                "success",
+                "Reserva aceptada",
+                "La reserva fue aceptada correctamente y se notificó al cliente."
+            );
 
         } catch (error) {
 
@@ -278,7 +285,7 @@ function ReservationList() {
                                                         <button
                                                             className="reservation-btn-accept"
                                                             onClick={() =>
-                                                                acceptReservation(
+                                                                setReservationToAcceptId(
                                                                     reservation.idReservation
                                                                 )
                                                             }
@@ -371,6 +378,43 @@ function ReservationList() {
                                 onClick={() => setClientToDetail(null)}
                             >
                                 Cerrar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {reservationToAcceptId && (
+                <div className="res-cancel-backdrop" onClick={() => setReservationToAcceptId(null)}>
+                    <div className="res-cancel-modal" onClick={(e) => e.stopPropagation()}>
+                        <button
+                            className="res-cancel-close"
+                            onClick={() => setReservationToAcceptId(null)}
+                            aria-label="Cerrar"
+                        >
+                            ✕
+                        </button>
+                        <h3>¿Aceptar la reserva?</h3>
+                        <p className="res-cancel-intro">
+                            Estás por aceptar la reserva <strong>#{reservationToAcceptId}</strong>.
+                            Al confirmar, la reserva pasará al estado <strong>Aceptada</strong>,
+                            se generará el contrato y se notificará al cliente.
+                        </p>
+                        <p className="res-cancel-intro">
+                            Si todavía no estás seguro, podés volver sin realizar cambios.
+                        </p>
+                        <div className="res-cancel-actions">
+                            <button
+                                className="btn-submit-cyan"
+                                onClick={() => setReservationToAcceptId(null)}
+                            >
+                                Volver
+                            </button>
+                            <button
+                                className="btn-j-primary"
+                                onClick={() => acceptReservation(reservationToAcceptId)}
+                            >
+                                Sí, aceptar reserva
                             </button>
                         </div>
                     </div>

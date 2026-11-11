@@ -2,7 +2,7 @@ import prisma from "../src/lib/prisma.js";
 
 const LOUNGES = [
     {
-        name: "Stylo Funes",
+        name: "Stylo Rosario",
         loungeAddress: "Av Pellegrini 31",
         city: "Rosario",
         types: [
@@ -18,7 +18,7 @@ const LOUNGES = [
         ]
     },
     {
-        name: "Stylo Roldán",
+        name: "Stylo Rosario Centro",
         loungeAddress: "Av Pellegrini 3124",
         city: "Rosario",
         types: [

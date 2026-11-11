@@ -52,10 +52,17 @@ function ContractDetail() {
     const [modificando, setModificando] = useState(false);
     const [commentMod, setCommentMod] = useState("");
     const [showTerminos, setShowTerminos] = useState(false);
+    const [confirmFirma, setConfirmFirma] = useState(false);
     const [confirmCancelar, setConfirmCancelar] = useState(false);
     const [confirmEliminar, setConfirmEliminar] = useState(false);
     const [rejectOpen, setRejectOpen] = useState(false);
     const [rejectMotivo, setRejectMotivo] = useState("");
+    const [adminDate, setAdminDate] = useState("");
+    const [confirmCambioFecha, setConfirmCambioFecha] = useState(false);
+    const [motivoCambioFecha, setMotivoCambioFecha] = useState("");
+    const [confirmAceptarCambio, setConfirmAceptarCambio] = useState(false);
+    const [confirmCancelarCambio, setConfirmCancelarCambio] = useState(false);
+    const [motivoCancelarCambio, setMotivoCancelarCambio] = useState("");
     const [pendingRedirect, setPendingRedirect] = useState(false);
     const [activePrice, setActivePrice] = useState(null);
     const [reportingPayment, setReportingPayment] = useState(null);
@@ -97,7 +104,20 @@ function ContractDetail() {
         contract?.status === "firmado" &&
         contract?.modificationStatus === "rechazada";
 
-    const puedeEditar = canEdit;
+    const puedeEditar = canEdit && rol === "cliente";
+
+    const esCambioFechaAdmin =
+        contract?.modificationData?.origin === "administrador";
+    const tieneCambioFechaAdminPendiente =
+        rol === "cliente" &&
+        contract?.status === "en_revision" &&
+        tieneModPendiente &&
+        esCambioFechaAdmin;
+    const puedeCambiarFechaAdmin =
+        rol === "administrador" &&
+        ["generado", "aprobado", "firmado"].includes(contract?.status) &&
+        !contract?.modificationStatus &&
+        !esCambioFechaAdmin;
 
     const showMessage = (type, title, text) => {
         setMessage({ type, title, text });
@@ -165,6 +185,12 @@ function ContractDetail() {
                 const data = await contractService.getById(id);
 
                 setContract(data);
+
+                setAdminDate(
+                    data.reservation?.dateEvent
+                        ? data.reservation.dateEvent.split("T")[0]
+                        : ""
+                );
 
                 setForm({
                     dateEvent: data.reservation?.dateEvent
@@ -422,6 +448,107 @@ function ContractDetail() {
         }
     };
 
+    const handleSolicitarCambioFecha = async () => {
+        setMessage(null);
+
+        if (!adminDate) {
+            showMessage("error", "Falta la fecha", "Seleccioná la nueva fecha del evento.");
+            return;
+        }
+
+        const fechaActual = contract.reservation?.dateEvent
+            ? contract.reservation.dateEvent.split("T")[0]
+            : "";
+
+        if (adminDate === fechaActual) {
+            showMessage("error", "Fecha sin cambios", "La nueva fecha debe ser distinta de la actual.");
+            return;
+        }
+
+        if (!motivoCambioFecha.trim()) {
+            showMessage("error", "Falta el motivo", "Escribí el motivo del cambio de fecha para notificar al cliente.");
+            return;
+        }
+
+        setSaving(true);
+
+        try {
+            const data = await contractService.solicitarCambioFecha(id, {
+                dateEvent: adminDate,
+                motivo: motivoCambioFecha.trim()
+            });
+
+            setContract(data.contract);
+            setConfirmCambioFecha(false);
+            setMotivoCambioFecha("");
+            showMessage(
+                "success",
+                "Cambio de fecha propuesto",
+                "El contrato quedó en revisión hasta que el cliente acepte el cambio o cancele el evento. Se notificó al cliente."
+            );
+        } catch (error) {
+            showMessage("error", "Error", error.message);
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleAceptarCambioFecha = async () => {
+        setMessage(null);
+        setSaving(true);
+
+        try {
+            const data = await contractService.aceptarCambioFecha(id);
+
+            setContract(data.contract);
+            setConfirmAceptarCambio(false);
+            const nuevaFecha = data.contract.reservation?.dateEvent
+                ? data.contract.reservation.dateEvent.split("T")[0]
+                : "";
+            setAdminDate(nuevaFecha);
+            setForm((prev) => ({ ...prev, dateEvent: nuevaFecha }));
+            showMessage(
+                "success",
+                "Cambio de fecha aceptado",
+                "El evento quedó programado para la nueva fecha y se notificó al administrador."
+            );
+        } catch (error) {
+            setConfirmAceptarCambio(false);
+            showMessage("error", "Error", error.message);
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleCancelarCambioFecha = async () => {
+        setMessage(null);
+
+        if (!motivoCancelarCambio.trim()) {
+            showMessage("error", "Falta el motivo", "Escribí el motivo de la cancelación del evento.");
+            return;
+        }
+
+        setSaving(true);
+
+        try {
+            await contractService.cancelarCambioFecha(id, {
+                motivo: motivoCancelarCambio.trim()
+            });
+
+            setConfirmCancelarCambio(false);
+            setPendingRedirect(true);
+            showMessage(
+                "success",
+                "Evento cancelado",
+                "Rechazaste el cambio de fecha y el evento fue cancelado. Se notificó al administrador."
+            );
+        } catch (error) {
+            showMessage("error", "Error", error.message);
+        } finally {
+            setSaving(false);
+        }
+    };
+
     const handleCambiarPago = async (payment, statusPayment) => {
         if (!payment) return;
         setMessage(null);
@@ -543,8 +670,15 @@ function ContractDetail() {
             const data = await contractService.aceptar(id);
 
             setContract(data.contract);
-            navigate("/client-home");
+            setConfirmFirma(false);
+            setPendingRedirect(true);
+            showMessage(
+                "success",
+                "Contrato firmado",
+                "El contrato fue firmado correctamente y se notificó al administrador."
+            );
         } catch (error) {
+            setConfirmFirma(false);
             showMessage("error", "Error", error.message);
         } finally {
             setSaving(false);
@@ -843,6 +977,45 @@ function ContractDetail() {
                         </div>
                     </div>
                 </section>
+
+                {/* CAMBIO DE FECHA (admin) */}
+                {puedeCambiarFechaAdmin && (
+                    <section className="contract-section contract-mod-revision">
+                        <h2>Cambio de fecha del evento</h2>
+                        <div className="contract-mod-alert">
+                            <strong>REPROGRAMAR EVENTO</strong>
+                            <span>
+                                Podés proponer una nueva fecha para el evento. El cliente deberá
+                                aceptarla o cancelar el evento. Mientras tanto, el contrato quedará
+                                en revisión y se le enviará una notificación con el motivo.
+                            </span>
+                        </div>
+                        <div className="contract-fields">
+                            <div className="contract-field">
+                                <label>Fecha actual</label>
+                                <span>{formatDate(reservation.dateEvent)}</span>
+                            </div>
+                            <div className="contract-field">
+                                <label>Nueva fecha</label>
+                                <input
+                                    type="date"
+                                    value={adminDate}
+                                    min={new Date().toISOString().split("T")[0]}
+                                    onChange={(e) => setAdminDate(e.target.value)}
+                                />
+                            </div>
+                        </div>
+                        <div className="contract-actions">
+                            <button
+                                className="contract-btn-save"
+                                onClick={() => setConfirmCambioFecha(true)}
+                                disabled={saving}
+                            >
+                                Guardar cambios
+                            </button>
+                        </div>
+                    </section>
+                )}
 
                 {/* CANTIDAD EXACTA + HORARIOS */}
                 <section className="contract-section">
@@ -1155,6 +1328,49 @@ function ContractDetail() {
                         </section>
                     )}
 
+                {/* CAMBIO DE FECHA PROPUESTO POR EL ADMINISTRADOR (cliente) */}
+                {tieneCambioFechaAdminPendiente && (
+                    <section className="contract-section contract-mod-solicitando">
+                        <div className="contract-mod-alert">
+                            <strong>CAMBIO DE FECHA PROPUESTO POR EL ADMINISTRADOR</strong>
+                            <span>
+                                El administrador propone reprogramar tu evento. Revisá la nueva
+                                fecha y elegí si aceptás el cambio o si preferís cancelar el evento.
+                            </span>
+                        </div>
+                        <div className="contract-mod-diff">
+                            {modDiffs.map((diff, i) => (
+                                <div className="contract-mod-diff-row" key={i}>
+                                    <div className="contract-mod-diff-campo">{diff.campo}</div>
+                                    <div className="contract-mod-diff-val actual">{diff.actual}</div>
+                                    <div className="contract-mod-diff-arrow">→</div>
+                                    <div className="contract-mod-diff-val nuevo">{diff.nuevo}</div>
+                                </div>
+                            ))}
+                        </div>
+                        <div className="contract-mod-comment">
+                            <strong>Motivo del cambio:</strong>
+                            <p>{contract.modificationComment || "Sin motivo informado."}</p>
+                        </div>
+                        <div className="contract-actions">
+                            <button
+                                className="contract-btn-accept"
+                                onClick={() => setConfirmAceptarCambio(true)}
+                                disabled={saving}
+                            >
+                                Aceptar cambio de fecha
+                            </button>
+                            <button
+                                className="contract-btn-reject"
+                                onClick={() => setConfirmCancelarCambio(true)}
+                                disabled={saving}
+                            >
+                                Rechazar y cancelar el evento
+                            </button>
+                        </div>
+                    </section>
+                )}
+
                 {/* MODIFICACION RECHAZADA (decision del cliente) */}
                 {tieneModRechazada && (
                     <section className="contract-section contract-mod-rechazada">
@@ -1236,8 +1452,36 @@ function ContractDetail() {
                         </section>
                     )}
 
+                {/* CAMBIO DE FECHA PENDIENTE DE RESPUESTA (admin) */}
+                {rol === "administrador" && esCambioFechaAdmin && tieneModPendiente && (
+                    <section className="contract-section contract-mod-solicitando">
+                        <div className="contract-mod-alert">
+                            <strong>CAMBIO DE FECHA PROPUESTO — ESPERANDO AL CLIENTE</strong>
+                            <span>
+                                Le propusiste al cliente una nueva fecha para el evento. El
+                                contrato quedará en revisión hasta que acepte el cambio o
+                                cancele el evento.
+                            </span>
+                        </div>
+                        <div className="contract-mod-diff">
+                            {modDiffs.map((diff, i) => (
+                                <div className="contract-mod-diff-row" key={i}>
+                                    <div className="contract-mod-diff-campo">{diff.campo}</div>
+                                    <div className="contract-mod-diff-val actual">{diff.actual}</div>
+                                    <div className="contract-mod-diff-arrow">→</div>
+                                    <div className="contract-mod-diff-val nuevo">{diff.nuevo}</div>
+                                </div>
+                            ))}
+                        </div>
+                        <div className="contract-mod-comment">
+                            <strong>Motivo enviado al cliente:</strong>
+                            <p>{contract.modificationComment || "Sin motivo informado."}</p>
+                        </div>
+                    </section>
+                )}
+
                 {/* REVISION DE MODIFICACION (admin) */}
-                {rol === "administrador" && tieneModPendiente && contract.modificationData && (
+                {rol === "administrador" && tieneModPendiente && contract.modificationData && !esCambioFechaAdmin && (
                     <section className="contract-section contract-mod-revision">
                         <div className="contract-mod-alert">
                             <strong>MODIFICACIÓN SOLICITADA</strong>
@@ -1343,7 +1587,7 @@ function ContractDetail() {
                         </p>
                     )}
 
-                    {rol === "cliente" && contract.status !== "aprobado" && !canEdit && contract.status !== "firmado" && (
+                    {rol === "cliente" && contract.status !== "aprobado" && !canEdit && contract.status !== "firmado" && !tieneCambioFechaAdminPendiente && (
                         <p className="contract-pending-note">
                             El contrato está en revisión por el administrador.
                         </p>
@@ -1492,11 +1736,52 @@ function ContractDetail() {
                                 className="contract-btn-accept"
                                 onClick={() => {
                                     setShowTerminos(false);
-                                    handleAceptar();
+                                    setConfirmFirma(true);
                                 }}
                                 disabled={saving}
                             >
-                                {saving ? "Firmando..." : "Acepto y confirmo"}
+                                Acepto y confirmo
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {confirmFirma && (
+                <div className="contract-terms-backdrop" onClick={() => !saving && setConfirmFirma(false)}>
+                    <div className="contract-terms-modal" onClick={(e) => e.stopPropagation()}>
+                        <button
+                            className="contract-terms-close"
+                            onClick={() => !saving && setConfirmFirma(false)}
+                            aria-label="Cerrar"
+                            disabled={saving}
+                        >
+                            ✕
+                        </button>
+                        <h3>¿Confirmás la firma del contrato?</h3>
+                        <p className="contract-terms-intro">
+                            Estás por firmar el contrato #{contract.idContract}
+                            {fecEvento ? ` para el evento del ${formatDate(fecEvento)}` : ""}.
+                            Al confirmar, el contrato quedará vigente y se notificará al administrador.
+                        </p>
+                        <p className="contract-terms-intro contract-terms-warning">
+                            <strong>Esta acción tiene efecto inmediato.</strong> Si todavía no estás seguro,
+                            podés volver y revisar el contrato antes de firmar.
+                        </p>
+                        <div className="contract-terms-actions">
+                            <button
+                                className="contract-btn-save"
+                                onClick={() => setConfirmFirma(false)}
+                                disabled={saving}
+                            >
+                                Volver
+                            </button>
+                            <button
+                                className="contract-btn-accept"
+                                onClick={handleAceptar}
+                                disabled={saving}
+                            >
+                                {saving ? "Firmando..." : "Sí, firmar contrato"}
                             </button>
                         </div>
                     </div>
@@ -1543,6 +1828,143 @@ function ContractDetail() {
                             </button>
                             <button className="contract-btn-reject" onClick={handleEliminarContrato} disabled={saving}>
                                 {saving ? "Eliminando..." : "Sí, eliminar el contrato"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {confirmCambioFecha && (
+                <div className="contract-terms-backdrop" onClick={() => !saving && setConfirmCambioFecha(false)}>
+                    <div className="contract-terms-modal" onClick={(e) => e.stopPropagation()}>
+                        <button
+                            className="contract-terms-close"
+                            onClick={() => !saving && setConfirmCambioFecha(false)}
+                            aria-label="Cerrar"
+                            disabled={saving}
+                        >
+                            ✕
+                        </button>
+                        <h3>Confirmar cambio de fecha</h3>
+                        <p className="contract-terms-intro">
+                            Vas a proponer reprogramar el evento del{" "}
+                            <strong>{formatDate(reservation.dateEvent)}</strong> al{" "}
+                            <strong>{formatDate(adminDate)}</strong>.
+                        </p>
+                        <p className="contract-terms-intro contract-terms-warning">
+                            El contrato quedará en revisión hasta que el cliente acepte el cambio
+                            o cancele el evento. Se le enviará una notificación con el motivo.
+                        </p>
+                        <textarea
+                            className="contract-reason-textarea"
+                            value={motivoCambioFecha}
+                            onChange={(e) => setMotivoCambioFecha(e.target.value)}
+                            placeholder="Escribí el motivo del cambio de fecha..."
+                            rows="4"
+                        />
+                        <div className="contract-terms-actions">
+                            <button
+                                className="contract-btn-save"
+                                onClick={() => setConfirmCambioFecha(false)}
+                                disabled={saving}
+                            >
+                                Volver
+                            </button>
+                            <button
+                                className="contract-btn-accept"
+                                onClick={handleSolicitarCambioFecha}
+                                disabled={saving}
+                            >
+                                {saving ? "Enviando..." : "Sí, proponer nueva fecha"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {confirmAceptarCambio && (
+                <div className="contract-terms-backdrop" onClick={() => !saving && setConfirmAceptarCambio(false)}>
+                    <div className="contract-terms-modal" onClick={(e) => e.stopPropagation()}>
+                        <button
+                            className="contract-terms-close"
+                            onClick={() => !saving && setConfirmAceptarCambio(false)}
+                            aria-label="Cerrar"
+                            disabled={saving}
+                        >
+                            ✕
+                        </button>
+                        <h3>¿Aceptás el cambio de fecha?</h3>
+                        <p className="contract-terms-intro">
+                            El evento pasará del{" "}
+                            <strong>{formatDate(reservation.dateEvent)}</strong> al{" "}
+                            <strong>{formatDate(contract.modificationData?.dateEvent)}</strong>.
+                            Al confirmar, se actualizará la reserva y se notificará al administrador.
+                        </p>
+                        <p className="contract-terms-intro contract-terms-warning">
+                            <strong>Esta acción tiene efecto inmediato.</strong> Si no estás de
+                            acuerdo con la nueva fecha, podés rechazarla y cancelar el evento.
+                        </p>
+                        <div className="contract-terms-actions">
+                            <button
+                                className="contract-btn-save"
+                                onClick={() => setConfirmAceptarCambio(false)}
+                                disabled={saving}
+                            >
+                                Volver
+                            </button>
+                            <button
+                                className="contract-btn-accept"
+                                onClick={handleAceptarCambioFecha}
+                                disabled={saving}
+                            >
+                                {saving ? "Aceptando..." : "Sí, aceptar cambio"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {confirmCancelarCambio && (
+                <div className="contract-terms-backdrop" onClick={() => !saving && setConfirmCancelarCambio(false)}>
+                    <div className="contract-terms-modal" onClick={(e) => e.stopPropagation()}>
+                        <button
+                            className="contract-terms-close"
+                            onClick={() => !saving && setConfirmCancelarCambio(false)}
+                            aria-label="Cerrar"
+                            disabled={saving}
+                        >
+                            ✕
+                        </button>
+                        <h3>Rechazar cambio y cancelar el evento</h3>
+                        <p className="contract-terms-intro">
+                            Si rechazás el cambio de fecha, el contrato y la reserva del evento
+                            serán dados de baja. Esta acción no se puede deshacer.
+                        </p>
+                        <p className="contract-terms-intro contract-terms-warning">
+                            <strong>No habrá reembolso del dinero:</strong> los pagos que hayas
+                            realizado no se devuelven.
+                        </p>
+                        <textarea
+                            className="contract-reason-textarea"
+                            value={motivoCancelarCambio}
+                            onChange={(e) => setMotivoCancelarCambio(e.target.value)}
+                            placeholder="Escribí el motivo por el que cancelás el evento..."
+                            rows="4"
+                        />
+                        <div className="contract-terms-actions">
+                            <button
+                                className="contract-btn-save"
+                                onClick={() => setConfirmCancelarCambio(false)}
+                                disabled={saving}
+                            >
+                                Volver
+                            </button>
+                            <button
+                                className="contract-btn-reject"
+                                onClick={handleCancelarCambioFecha}
+                                disabled={saving}
+                            >
+                                {saving ? "Cancelando..." : "Sí, cancelar el evento"}
                             </button>
                         </div>
                     </div>

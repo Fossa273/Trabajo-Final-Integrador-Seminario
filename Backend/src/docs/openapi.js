@@ -2175,7 +2175,8 @@ const openapi = {
                                 type: "object",
                                 required: ["decision"],
                                 properties: {
-                                    decision: { type: "string", enum: ["aprobar", "rechazar"] }
+                                    decision: { type: "string", enum: ["aprobar", "rechazar"] },
+                                    motivo: { type: "string", description: "Requerido al rechazar" }
                                 }
                             }
                         }
@@ -2337,6 +2338,133 @@ const openapi = {
                                             nullable: true,
                                             allOf: [{ $ref: "#/components/schemas/Contract" }]
                                         }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    400: { $ref: "#/components/responses/ValidationError" },
+                    401: { $ref: "#/components/responses/Unauthorized" },
+                    403: { $ref: "#/components/responses/Forbidden" },
+                    404: { $ref: "#/components/responses/NotFound" }
+                }
+            }
+        },
+        "/api/contract/{id}/cambio-fecha": {
+            parameters: [
+                { name: "id", in: "path", required: true, schema: { type: "integer" } }
+            ],
+            put: {
+                tags: ["contract"],
+                summary: "Proponer un cambio de fecha del evento (admin)",
+                description: "El contrato pasa a en_revision y el cliente debe aceptar el cambio o cancelar el evento.",
+                security: bearerAuth,
+                requestBody: {
+                    required: true,
+                    content: {
+                        "application/json": {
+                            schema: {
+                                type: "object",
+                                required: ["dateEvent", "motivo"],
+                                properties: {
+                                    dateEvent: { type: "string", format: "date" },
+                                    motivo: { type: "string", description: "Motivo notificado al cliente" }
+                                }
+                            }
+                        }
+                    }
+                },
+                responses: {
+                    200: {
+                        description: "Cambio de fecha propuesto.",
+                        content: {
+                            "application/json": {
+                                schema: {
+                                    type: "object",
+                                    properties: {
+                                        message: { type: "string" },
+                                        contract: { $ref: "#/components/schemas/Contract" }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    400: { $ref: "#/components/responses/ValidationError" },
+                    401: { $ref: "#/components/responses/Unauthorized" },
+                    403: { $ref: "#/components/responses/Forbidden" },
+                    404: { $ref: "#/components/responses/NotFound" },
+                    409: {
+                        description: "El salón no está disponible en la nueva fecha.",
+                        content: { "application/json": { schema: errorSchema } }
+                    }
+                }
+            }
+        },
+        "/api/contract/{id}/cambio-fecha/aceptar": {
+            parameters: [
+                { name: "id", in: "path", required: true, schema: { type: "integer" } }
+            ],
+            post: {
+                tags: ["contract"],
+                summary: "Aceptar el cambio de fecha propuesto por el administrador (cliente)",
+                security: bearerAuth,
+                responses: {
+                    200: {
+                        description: "Cambio de fecha aceptado y aplicado a la reserva.",
+                        content: {
+                            "application/json": {
+                                schema: {
+                                    type: "object",
+                                    properties: {
+                                        message: { type: "string" },
+                                        contract: { $ref: "#/components/schemas/Contract" }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    400: { $ref: "#/components/responses/ValidationError" },
+                    401: { $ref: "#/components/responses/Unauthorized" },
+                    403: { $ref: "#/components/responses/Forbidden" },
+                    404: { $ref: "#/components/responses/NotFound" },
+                    409: {
+                        description: "El salón ya no está disponible en la fecha propuesta.",
+                        content: { "application/json": { schema: errorSchema } }
+                    }
+                }
+            }
+        },
+        "/api/contract/{id}/cambio-fecha/cancelar": {
+            parameters: [
+                { name: "id", in: "path", required: true, schema: { type: "integer" } }
+            ],
+            post: {
+                tags: ["contract"],
+                summary: "Rechazar el cambio de fecha y cancelar el evento (cliente)",
+                security: bearerAuth,
+                requestBody: {
+                    required: true,
+                    content: {
+                        "application/json": {
+                            schema: {
+                                type: "object",
+                                required: ["motivo"],
+                                properties: {
+                                    motivo: { type: "string", description: "Motivo de la cancelación" }
+                                }
+                            }
+                        }
+                    }
+                },
+                responses: {
+                    200: {
+                        description: "Evento cancelado y contrato dado de baja.",
+                        content: {
+                            "application/json": {
+                                schema: {
+                                    type: "object",
+                                    properties: {
+                                        message: { type: "string" }
                                     }
                                 }
                             }

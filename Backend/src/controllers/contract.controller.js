@@ -133,13 +133,24 @@ class ContractController {
     });
 
     review = asyncHandler(async (req, res) => {
-        const { decision } = req.body;
+        const { decision, motivo } = req.body;
 
         if (!["aprobar", "rechazar"].includes(decision)) {
             throw httpError(400, "La decisión debe ser 'aprobar' o 'rechazar'.");
         }
 
-        const reviewed = await contractService.review(req.params.id, decision);
+        if (decision === "rechazar" && !(typeof motivo === "string" && motivo.trim())) {
+            throw httpError(
+                400,
+                "Debés indicar el motivo del rechazo del contrato para notificar al cliente."
+            );
+        }
+
+        const reviewed = await contractService.review(
+            req.params.id,
+            decision,
+            motivo?.trim()
+        );
 
         return res.status(200).json({
             message: decision === "aprobar"
@@ -207,9 +218,66 @@ class ContractController {
 
         return res.status(200).json({
             message: decision === "continuar"
-                ? "Perfecto. Continuás con el contrato como estaba."
+                ? "Perfecto. Continuǭs con el contrato como estaba."
                 : "El evento fue cancelado y el contrato dado de baja.",
             contract: result.contract || null
+        });
+    });
+
+    solicitarCambioFecha = asyncHandler(async (req, res) => {
+        const { dateEvent, motivo } = req.body;
+
+        if (!dateEvent) {
+            throw httpError(400, "Indicá la nueva fecha del evento.");
+        }
+
+        if (!(typeof motivo === "string" && motivo.trim())) {
+            throw httpError(
+                400,
+                "Debés indicar el motivo del cambio de fecha para notificar al cliente."
+            );
+        }
+
+        const updated = await contractService.solicitarCambioFecha(
+            req.params.id,
+            { dateEvent, motivo: motivo.trim() }
+        );
+
+        return res.status(200).json({
+            message: "Cambio de fecha propuesto. El cliente debe aceptarlo o cancelar el evento.",
+            contract: updated
+        });
+    });
+
+    aceptarCambioFecha = asyncHandler(async (req, res) => {
+        await this.loadContract(req);
+
+        const updated = await contractService.aceptarCambioFecha(
+            req.params.id
+        );
+
+        return res.status(200).json({
+            message: "Aceptaste el cambio de fecha. El evento quedó programado para la nueva fecha.",
+            contract: updated
+        });
+    });
+
+    cancelarCambioFecha = asyncHandler(async (req, res) => {
+        await this.loadContract(req);
+
+        const motivo = req.body?.motivo?.trim();
+
+        if (!motivo) {
+            throw httpError(
+                400,
+                "Debés indicar el motivo de la cancelación del evento."
+            );
+        }
+
+        await contractService.cancelarCambioFecha(req.params.id, motivo);
+
+        return res.status(200).json({
+            message: "Rechazaste el cambio de fecha y el evento fue cancelado."
         });
     });
 }
