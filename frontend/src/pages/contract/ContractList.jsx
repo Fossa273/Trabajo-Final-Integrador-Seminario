@@ -42,6 +42,12 @@ function ContractList() {
     const [feedback, setFeedback] = useState(null);
     const [loading, setLoading] = useState(true);
 
+    const [approveId, setApproveId] = useState(null);
+    const [rejectId, setRejectId] = useState(null);
+    const [rejectOpen, setRejectOpen] = useState(false);
+    const [rejectMotivo, setRejectMotivo] = useState("");
+    const [reviewing, setReviewing] = useState(false);
+
     const showFeedback = (type, title, message) => {
         setFeedback({ type, title, message });
     };
@@ -88,21 +94,61 @@ function ContractList() {
         return contracts.filter((c) => c.status === statusFilter);
     })();
 
-    const review = async (id, decision) => {
+    const review = async (id, decision, motivo) => {
+        setReviewing(true);
+
         try {
-            const data = await contractService.revision(id, { decision });
+            await contractService.revision(
+                id,
+                decision === "rechazar" ? { decision, motivo } : { decision }
+            );
+
+            setApproveId(null);
+            setRejectOpen(false);
+            setRejectId(null);
+            setRejectMotivo("");
 
             showFeedback(
                 "success",
-                decision === "aprobar" ? "Revisión aprobada" : "Revisión rechazada",
-                data.message
+                decision === "aprobar" ? "Contrato aprobado" : "Contrato rechazado",
+                decision === "aprobar"
+                    ? "El contrato fue aprobado correctamente. El cliente fue notificado y ya puede firmarlo."
+                    : "El contrato fue rechazado correctamente. El cliente fue notificado con el motivo."
             );
 
             getContracts();
         } catch (error) {
             console.error(error);
             showFeedback("error", "Error", error.message);
+        } finally {
+            setReviewing(false);
         }
+    };
+
+    const handleRejectClick = (id) => {
+        setRejectId(id);
+        setRejectMotivo("");
+        setRejectOpen(true);
+    };
+
+    const handleRejectConfirm = () => {
+        if (!rejectMotivo.trim()) {
+            showFeedback(
+                "error",
+                "Falta el motivo",
+                "Escribí el motivo del rechazo para notificarlo al cliente."
+            );
+            return;
+        }
+
+        review(rejectId, "rechazar", rejectMotivo.trim());
+    };
+
+    const closeReject = () => {
+        if (reviewing) return;
+        setRejectOpen(false);
+        setRejectId(null);
+        setRejectMotivo("");
     };
 
     const formatDate = (dateStr) => {
@@ -232,21 +278,29 @@ function ContractList() {
                                                         Ver
                                                     </button>
 
-                                                    {contract.status === "en_revision" && (
+                                                    {contract.status === "en_revision" &&
+                                                        contract.modificationData?.origin !== "administrador" && (
                                                         <>
                                                             <button
                                                                 className="contract-action-approve"
-                                                                onClick={() => review(contract.idContract, "aprobar")}
+                                                                onClick={() => setApproveId(contract.idContract)}
                                                             >
                                                                 Aprobar
                                                             </button>
                                                             <button
                                                                 className="contract-action-reject"
-                                                                onClick={() => review(contract.idContract, "rechazar")}
+                                                                onClick={() => handleRejectClick(contract.idContract)}
                                                             >
                                                                 Rechazar
                                                             </button>
                                                         </>
+                                                    )}
+
+                                                    {contract.status === "en_revision" &&
+                                                        contract.modificationData?.origin === "administrador" && (
+                                                        <span className="contract-list-modbadge">
+                                                            Esperando al cliente
+                                                        </span>
                                                     )}
                                                 </div>
                                             </td>
@@ -261,6 +315,91 @@ function ContractList() {
                 </div>
 
             </div>
+
+            {approveId && (
+                <div className="contract-confirm-backdrop" onClick={() => !reviewing && setApproveId(null)}>
+                    <div className="contract-confirm-modal" onClick={(e) => e.stopPropagation()}>
+                        <button
+                            className="contract-confirm-close"
+                            onClick={() => !reviewing && setApproveId(null)}
+                            aria-label="Cerrar"
+                            disabled={reviewing}
+                        >
+                            ✕
+                        </button>
+                        <h3>¿Aprobar el contrato?</h3>
+                        <p className="contract-confirm-intro">
+                            Estás por aprobar el contrato <strong>#{approveId}</strong>.
+                            Al confirmar, quedará listo para que el cliente lo firme y se le
+                            notificará la decisión.
+                        </p>
+                        <p className="contract-confirm-intro">
+                            Si todavía no estás seguro, podés volver sin realizar cambios.
+                        </p>
+                        <div className="contract-confirm-actions">
+                            <button
+                                className="btn-submit-cyan"
+                                onClick={() => setApproveId(null)}
+                                disabled={reviewing}
+                            >
+                                Volver
+                            </button>
+                            <button
+                                className="contract-confirm-approve"
+                                onClick={() => review(approveId, "aprobar")}
+                                disabled={reviewing}
+                            >
+                                {reviewing ? "Aprobando..." : "Sí, aprobar contrato"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {rejectOpen && (
+                <div className="contract-confirm-backdrop" onClick={closeReject}>
+                    <div className="contract-confirm-modal" onClick={(e) => e.stopPropagation()}>
+                        <button
+                            className="contract-confirm-close"
+                            onClick={closeReject}
+                            aria-label="Cerrar"
+                            disabled={reviewing}
+                        >
+                            ✕
+                        </button>
+                        <h3>Rechazar contrato</h3>
+                        <p className="contract-confirm-intro">
+                            Estás por rechazar el contrato <strong>#{rejectId}</strong>.
+                            Indicá el <strong>motivo</strong> del rechazo: se lo notificaremos
+                            al cliente para que corrija los datos y lo envíe de nuevo.
+                        </p>
+                        <textarea
+                            className="contract-confirm-textarea"
+                            value={rejectMotivo}
+                            onChange={(e) => setRejectMotivo(e.target.value)}
+                            placeholder="Escribí el motivo del rechazo..."
+                            rows="4"
+                            disabled={reviewing}
+                        />
+                        <div className="contract-confirm-actions">
+                            <button
+                                className="btn-submit-cyan"
+                                onClick={closeReject}
+                                disabled={reviewing}
+                            >
+                                Volver
+                            </button>
+                            <button
+                                className="contract-confirm-reject"
+                                onClick={handleRejectConfirm}
+                                disabled={reviewing}
+                            >
+                                {reviewing ? "Rechazando..." : "Sí, rechazar contrato"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {feedback && (
                 <FeedbackModal

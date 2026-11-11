@@ -6,6 +6,8 @@ import paymentService from "./payment.service.js";
 import prisma from "../lib/prisma.js";
 
 const EDITABLE_STATUSES = ["generado", "rechazado", "modificacion_en_curso"];
+const ADMIN_DATE_CHANGE_STATUSES = ["generado", "aprobado", "firmado"];
+const ADMIN_CHANGE_ORIGIN = "administrador";
 
 function toDateString(value) {
     if (!value) return null;
@@ -261,7 +263,7 @@ class ContractService {
         return await contractModel.getById(id);
     }
 
-    async review(id, decision) {
+    async review(id, decision, motivo) {
         const contract = await contractModel.getById(id);
 
         if (!contract) {
@@ -278,6 +280,25 @@ class ContractService {
             throw error;
         }
 
+        if (
+            contract.modificationStatus === "pendiente" &&
+            contract.modificationData?.origin === ADMIN_CHANGE_ORIGIN
+        ) {
+            const error = new Error(
+                "Este contrato tiene un cambio de fecha pendiente de respuesta del cliente."
+            );
+            error.statusCode = 400;
+            throw error;
+        }
+
+        if (decision === "rechazar" && !(typeof motivo === "string" && motivo.trim())) {
+            const error = new Error(
+                "Debés indicar el motivo del rechazo del contrato para notificar al cliente."
+            );
+            error.statusCode = 400;
+            throw error;
+        }
+
         const newStatus = decision === "aprobar" ? "aprobado" : "rechazado";
 
         await contractModel.updateStatus(id, newStatus);
@@ -286,7 +307,7 @@ class ContractService {
             idCli: contract.reservation.idCli,
             mensaje: decision === "aprobar"
                 ? `El contrato #${id} fue aprobado. Quedó listo para firmar.`
-                : `El contrato #${id} fue rechazado. Corregí los datos y enviá de nuevo.`,
+                : `El administrador rechazó el contrato #${id} por la siguiente razón: ${motivo.trim()}. Corregí los datos y enviá de nuevo.`,
             tipo: "contrato_revisado",
             idContract: id
         });
@@ -468,12 +489,285 @@ class ContractService {
         return await contractModel.getById(id);
     }
 
+    async solicitarCambioFecha(id, data) {
+        const contract = await contractModel.getById(id);
+
+        if (!contract) {
+            const error = new Error("Contrato no encontrado.");
+            error.statusCode = 404;
+            throw error;
+        }
+
+        if (!ADMIN_DATE_CHANGE_STATUSES.includes(contract.status)) {
+            const error = new Error(
+                "No se puede cambiar la fecha del evento en el estado actual del contrato."
+            );
+            error.statusCode = 400;
+            throw error;
+        }
+
+        if (contract.modificationStatus) {
+            const error = new Error(
+                "Ya hay una solicitud de modificación en curso para este contrato. Resolvela antes de proponer un cambio de fecha."
+            );
+            error.statusCode = 400;
+            throw error;
+        }
+
+        if (!(typeof data.motivo === "string" && data.motivo.trim())) {
+            const error = new Error(
+                "Debés indicar el motivo del cambio de fecha para notificar al cliente."
+            );
+            error.statusCode = 400;
+            throw error;
+        }
+
+        const reservation = contract.reservation;
+        const dateEvent = toDateString(data.dateEvent);
+        const currentDate = toDateString(reservation.dateEvent);
+
+        if (!dateEvent) {
+            const error = new Error("Indicá la nueva fecha del evento.");
+            error.statusCode = 400;
+            throw error;
+        }
+
+        if (dateEvent === currentDate) {
+            const error = new Error(
+                "La nueva fecha debe ser distinta de la fecha actual del evento."
+            );
+            error.statusCode = 400;
+            throw error;
+        }
+
+        const conflicts = await prisma.reservation.count({
+            where: {
+                idLounge: reservation.idLounge,
+                idLoungeType: reservation.idLoungeType,
+                dateEvent: new Date(dateEvent),
+                status: { not: "cancelada" },
+                idReservation: { not: reservation.idReservation }
+            }
+        });
+
+        if (conflicts > 0) {
+            const error = new Error(
+                "El salón no se encuentra disponible para la nueva fecha seleccionada."
+            );
+            error.statusCode = 409;
+            throw error;
+        }
+
+        const updated = await contractModel.updateModification(id, {
+            modificationStatus: "pendiente",
+            modificationData: {
+                dateEvent,
+                origin: ADMIN_CHANGE_ORIGIN,
+                previousStatus: contract.status
+            },
+            modificationComment: data.motivo.trim(),
+            modificationRequestedAt: new Date(),
+            modificationReviewedAt: null
+        });
+
+        if (!updated) {
+            const error = new Error(
+                "No se pudo registrar el cambio de fecha propuesto."
+            );
+            error.statusCode = 500;
+            throw error;
+        }
+
+        const statusUpdated = await contractModel.updateStatus(id, "en_revision");
+
+        if (!statusUpdated) {
+            const error = new Error(
+                "No se pudo actualizar el estado del contrato."
+            );
+            error.statusCode = 500;
+            throw error;
+        }
+
+        await notificationService.notifyClient({
+            idCli: reservation.idCli,
+            mensaje: `El administrador propuso cambiar la fecha del contrato #${id} del ${currentDate} al ${dateEvent}. Motivo: ${data.motivo.trim()}. Ingresá al contrato para aceptar el cambio o cancelar el evento.`,
+            tipo: "cambio_fecha_solicitado",
+            idContract: id
+        });
+
+        return await contractModel.getById(id);
+    }
+
+    async aceptarCambioFecha(id) {
+        const contract = await contractModel.getById(id);
+
+        if (!contract) {
+            const error = new Error("Contrato no encontrado.");
+            error.statusCode = 404;
+            throw error;
+        }
+
+        if (
+            contract.status !== "en_revision" ||
+            contract.modificationStatus !== "pendiente" ||
+            contract.modificationData?.origin !== ADMIN_CHANGE_ORIGIN
+        ) {
+            const error = new Error(
+                "No hay un cambio de fecha propuesto por el administrador pendiente de respuesta."
+            );
+            error.statusCode = 400;
+            throw error;
+        }
+
+        const data = contract.modificationData || {};
+        const dateEvent = toDateString(data.dateEvent);
+
+        if (!dateEvent) {
+            const error = new Error(
+                "El cambio de fecha propuesto no es válido."
+            );
+            error.statusCode = 400;
+            throw error;
+        }
+
+        const reservation = contract.reservation;
+
+        const conflicts = await prisma.reservation.count({
+            where: {
+                idLounge: reservation.idLounge,
+                idLoungeType: reservation.idLoungeType,
+                dateEvent: new Date(dateEvent),
+                status: { not: "cancelada" },
+                idReservation: { not: reservation.idReservation }
+            }
+        });
+
+        if (conflicts > 0) {
+            const error = new Error(
+                "El salón ya no se encuentra disponible para la nueva fecha propuesta. Contactá al administrador."
+            );
+            error.statusCode = 409;
+            throw error;
+        }
+
+        const updatedReservation = await reservationModel.update(
+            reservation.idReservation,
+            {
+                dateEvent,
+                status: reservation.status,
+                eventType: reservation.eventType,
+                cantInvit: reservation.cantInvit,
+                maxCantInvit: reservation.maxCantInvit,
+                idCli: reservation.idCli,
+                idLounge: reservation.idLounge,
+                idLoungeType: reservation.idLoungeType,
+                idCardDetail: reservation.idCardDetail
+            }
+        );
+
+        if (!updatedReservation) {
+            const error = new Error(
+                "No se pudo aplicar la nueva fecha del evento."
+            );
+            error.statusCode = 500;
+            throw error;
+        }
+
+        await contractModel.updateModification(id, {
+            modificationStatus: null,
+            modificationData: null,
+            modificationComment: null,
+            modificationRequestedAt: null,
+            modificationReviewedAt: null
+        });
+
+        const previousStatus = ADMIN_DATE_CHANGE_STATUSES.includes(
+            data.previousStatus
+        )
+            ? data.previousStatus
+            : "firmado";
+
+        const statusUpdated = await contractModel.updateStatus(
+            id,
+            previousStatus
+        );
+
+        if (!statusUpdated) {
+            const error = new Error(
+                "No se pudo actualizar el estado del contrato."
+            );
+            error.statusCode = 500;
+            throw error;
+        }
+
+        await notificationService.notifyAdmins({
+            mensaje: `El cliente aceptó el cambio de fecha del contrato #${id}. El evento quedó programado para el ${dateEvent}.`,
+            tipo: "cambio_fecha_aceptado",
+            idContract: id
+        });
+
+        return await contractModel.getById(id);
+    }
+
+    async cancelarCambioFecha(id, motivo) {
+        const contract = await contractModel.getById(id);
+
+        if (!contract) {
+            const error = new Error("Contrato no encontrado.");
+            error.statusCode = 404;
+            throw error;
+        }
+
+        if (
+            contract.status !== "en_revision" ||
+            contract.modificationStatus !== "pendiente" ||
+            contract.modificationData?.origin !== ADMIN_CHANGE_ORIGIN
+        ) {
+            const error = new Error(
+                "No hay un cambio de fecha propuesto por el administrador pendiente de respuesta."
+            );
+            error.statusCode = 400;
+            throw error;
+        }
+
+        if (!(typeof motivo === "string" && motivo.trim())) {
+            const error = new Error(
+                "Debés indicar el motivo de la cancelación del evento."
+            );
+            error.statusCode = 400;
+            throw error;
+        }
+
+        const reservation = contract.reservation;
+        const dateEvent = toDateString(contract.modificationData?.dateEvent);
+
+        await notificationService.notifyAdmins({
+            mensaje: `El cliente rechazó el cambio de fecha del contrato #${id}${dateEvent ? ` (fecha propuesta: ${dateEvent})` : ""} y canceló el evento. Motivo: ${motivo.trim()}.`,
+            tipo: "cambio_fecha_cancelado",
+            idContract: null
+        });
+
+        await contractModel.remove(id);
+
+        await reservationModel.delete(reservation.idReservation);
+
+        return true;
+    }
+
     async revisarModificacion(id, decision, motivo) {
         const contract = await contractModel.getById(id);
 
         if (!contract) {
             const error = new Error("Contrato no encontrado.");
             error.statusCode = 404;
+            throw error;
+        }
+
+        if (contract.modificationData?.origin === ADMIN_CHANGE_ORIGIN) {
+            const error = new Error(
+                "Este cambio de fecha fue propuesto por el administrador y debe responderlo el cliente."
+            );
+            error.statusCode = 400;
             throw error;
         }
 

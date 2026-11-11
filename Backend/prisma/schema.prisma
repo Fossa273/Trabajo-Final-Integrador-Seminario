@@ -154,8 +154,23 @@ model Contract {
   payments       Payment[]
   extraServices  ContractExtraService[]
   notifications  Notification[]
+  versions       ContractVersion[]
 
   @@unique([idReservation])
+}
+
+model ContractVersion {
+  idContractVersion Int      @id @default(autoincrement())
+  idContract        Int
+  nroVersion        Int
+  origen            String   @db.VarChar(30)
+  motivo            String?  @db.VarChar(500)
+  snapshot          Json
+  fecha             DateTime @default(now()) @db.DateTime(3)
+
+  contract Contract @relation(fields: [idContract], references: [idContract])
+
+  @@unique([idContract, nroVersion])
 }
 
 model ContractExtraService {

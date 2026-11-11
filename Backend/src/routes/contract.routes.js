@@ -19,5 +19,8 @@ router.put("/:id/revision", authenticate, requireRole(["administrador"]), contra
 router.put("/:id/modificacion", authenticate, contractController.solicitarModificacion);
 router.put("/:id/modificacion/revision", authenticate, requireRole(["administrador"]), contractController.revisarModificacion);
 router.post("/:id/modificacion/rechazo", authenticate, contractController.contestarRechazoModificacion);
+router.put("/:id/cambio-fecha", authenticate, requireRole(["administrador"]), contractController.solicitarCambioFecha);
+router.post("/:id/cambio-fecha/aceptar", authenticate, contractController.aceptarCambioFecha);
+router.post("/:id/cambio-fecha/cancelar", authenticate, contractController.cancelarCambioFecha);
 
 export default router;
